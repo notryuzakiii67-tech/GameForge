@@ -1,0 +1,24 @@
+# Ten-phase delivery and release status
+
+GameForge is organized and implemented as a ten-phase MVP. “Implemented” means the code path exists in this repository; it does not mean the feature has been exercised against production services or deployed. External prerequisites are called out explicitly.
+
+| Phase | Scope delivered in the repository | Release check / boundary |
+| --- | --- | --- |
+| 1. Platform foundation | Next.js App Router, React, TypeScript, shared responsive shell and page styles. | `npm run typecheck` and `npm run build`; then inspect the deployed UI at phone and desktop widths. |
+| 2. Persistent data | Versioned schema/migrations, SQLite local adapter, PostgreSQL production adapter, foreign keys, and database-backed rate limits. | Local migration tests do not prove a production PostgreSQL connection. Apply migrations to each environment. |
+| 3. Accounts and roles | Register/login/logout, bcrypt password hashing, hashed opaque sessions, active-account checks, admin/moderator authorization. | Register a test user and bootstrap an administrator from a trusted database connection. No email verification, recovery, OAuth, or MFA. |
+| 4. Discovery and creator profiles | Search/filter catalog, game pages, developer profiles, favorites, ratings, reviews, and follows. Optional starter games are visibly marked demos. | Seed demo records locally only if useful. Verify real records on the target database; do not treat demo content as user submissions. |
+| 5. Drafts, ZIP uploads, and submission | Developer game drafts, ZIP central-directory/path/type/size checks, stored build versions, submission state, private-by-default review queue. | Production upload needs PostgreSQL, private S3-compatible storage, and Vercel body-size capacity. Validation is not malware scanning. |
+| 6. Isolated browser play | Sandboxed iframe player, response CSP/MIME headers, public-build checks, and separate production game-content origin support. | Attach and verify the content host as a distinct HTTPS origin on the same Vercel project. Production isolation has not been verified in this workspace. |
+| 7. Community and reports | Database-backed favorites/ratings/reviews/follows and report submission, with admin report decisions and explicit non-demo game/AI-project takedown. | Takedowns hide future platform playback but retain stored files; bundled demos need a deployment update. Account suspension, appeal/restore, and deletion are not included. |
+| 8. AI Studio | Gemini/Mistral/Groq BYOK model discovery, prompt generation/edit, validated version history, restore/remix, sandboxed preview, and moderated publication. | A user's valid provider key/model and quota are required. GameForge's quota is not the provider's billing cap. No production provider integration is configured here. |
+| 9. Safety and moderation | Server-side ownership/role checks, same-origin mutation checks, rate limits, ZIP/project validation, admin review and report-driven takedown, and automated tests. | Review limitations in [Security](SECURITY.md); no automated malware scanner, account suspension, takedown appeals/restoration, or production alerting is included. |
+| 10. Vercel release and operator docs | `vercel.json`, production environment template, setup/security/deployment guides, and a release smoke checklist. | No Vercel deployment, production PostgreSQL/S3 provisioning, live provider check, backup restore, or production browser test has been performed. |
+
+## Current verification boundary
+
+Latest local verification: `npm test` passed 26 tests across 5 files; `npm run typecheck` passed; `npm run build` completed with no Turbopack filesystem-tracing warnings; and the last `npm audit --omit=dev` run reported 0 production dependency vulnerabilities. HTTP smoke checks returned 200 for the home page, game catalog/detail, health endpoint, and representative product pages. A local API flow registered/logged out a user, rejected an unauthenticated draft write, created a draft, validated/uploaded a small ZIP, and left the submission pending. Temporary local-only admin fixtures verified queue visibility, game approval and sandboxed playback, then report-driven takedown, missing-note rejection, and blocked future build/upload access; test roles and content status were restored afterward. These checks used local SQLite and local disk only.
+
+Passing local tests, TypeScript checks, a production build, or local API smoke only verifies those local checks. It does not verify account operations on Vercel, persistent production storage, provider availability, DNS/content-origin isolation, backup/restore, admin approval in production, or a full browser workflow.
+
+Before a public launch, use the [Vercel deployment smoke checklist](VERCEL.md#7-deployment-smoke-checklist), review every open boundary in [Security](SECURITY.md), and explicitly record the actual environment and results.
