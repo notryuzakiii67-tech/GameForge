@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDatabase, execute, newId, nowIso, query } from "@/lib/db";
-import { takeDownReportedContent } from "@/lib/moderation";
+import { setAccountStatus, takeDownReportedContent } from "@/lib/moderation";
 
 const mutableEnv = process.env as unknown as Record<string, string | undefined>;
 const previousDatabaseUrl = mutableEnv.DATABASE_URL;
@@ -13,13 +13,13 @@ afterAll(async () => {
   else mutableEnv.DATABASE_URL = previousDatabaseUrl;
 });
 
-async function createOwner() {
+async function createOwner(role = "user") {
   const id = newId();
   const timestamp = nowIso();
   await execute(
     `INSERT INTO users(id, username, display_name, email, password_hash, role, account_status, created_at, updated_at)
-     VALUES (?, ?, 'Moderation Test', ?, 'test-hash', 'user', 'active', ?, ?)`,
-    [id, `mod_${id.slice(0, 8)}`, `${id}@moderation.invalid`, timestamp, timestamp],
+     VALUES (?, ?, ?, ?, 'test-hash', ?, 'active', ?, ?)`,
+    [id, `mod_${id.slice(0, 8)}`, "Moderation Test", `${id}@moderation.invalid`, role, timestamp, timestamp],
   );
   return id;
 }
@@ -45,6 +45,39 @@ async function createGame(ownerId: string, status: string, projectId: string | n
   );
   return id;
 }
+
+describe("reported account moderation", () => {
+  it("suspends accounts, revokes sessions, and allows an active admin to restore access", async () => {
+    const actor = await createOwner("admin");
+    const target = await createOwner();
+    const timestamp = nowIso();
+    await execute(`INSERT INTO sessions(id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)`,
+      [newId(), target, `hash-${target}`, new Date(Date.now() + 60_000).toISOString(), timestamp]);
+    await setAccountStatus(actor, target, "suspended", timestamp, "Confirmed abuse report");
+    expect(await query<{ account_status: string }>(`SELECT account_status FROM users WHERE id=?`, [target])).toEqual([{ account_status: "suspended" }]);
+    expect(await query<{ count: number }>(`SELECT COUNT(*) AS count FROM sessions WHERE user_id=?`, [target])).toEqual([{ count: 0 }]);
+    expect(await query<{ event_type: string; details_json: string }>(
+      `SELECT event_type, details_json FROM audit_events WHERE actor_id = ? AND target_id = ? AND event_type = 'user.suspend'`, [actor, target],
+    )).toEqual([{ event_type: "user.suspend", details_json: JSON.stringify({ note: "Confirmed abuse report" }) }]);
+    await setAccountStatus(actor, target, "active", nowIso(), "Verified account appeal");
+    expect(await query<{ account_status: string }>(`SELECT account_status FROM users WHERE id=?`, [target])).toEqual([{ account_status: "active" }]);
+    expect(await query<{ event_type: string; details_json: string }>(`SELECT event_type, details_json FROM audit_events WHERE actor_id = ? AND target_id = ? AND event_type = 'user.restore'`, [actor, target])).toEqual([
+      { event_type: "user.restore", details_json: JSON.stringify({ note: "Verified account appeal" }) },
+    ]);
+  });
+
+  it("requires a site admin, blocks self-suspension, and preserves an active administrator", async () => {
+    const admin = await createOwner("admin");
+    await expect(setAccountStatus(admin, admin, "suspended", nowIso(), "Self test")).rejects.toMatchObject({ code: "SELF_MODERATION_BLOCKED" });
+    const nonAdmin = await createOwner();
+    const ordinaryTarget = await createOwner();
+    await expect(setAccountStatus(nonAdmin, ordinaryTarget, "suspended", nowIso(), "Unauthorized test")).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
+    expect(await query<{ account_status: string }>(`SELECT account_status FROM users WHERE id = ?`, [ordinaryTarget])).toEqual([{ account_status: "active" }]);
+    const otherAdmin = await createOwner("admin");
+    await setAccountStatus(admin, otherAdmin, "suspended", nowIso(), "Other admin remains active");
+    expect(await query<{ id: string }>(`SELECT id FROM users WHERE id = ? AND role='admin' AND account_status='active'`, [admin])).toEqual([{ id: admin }]);
+  });
+});
 
 describe("report-driven content takedown", () => {
   it("removes a pending game and locks its linked AI project", async () => {

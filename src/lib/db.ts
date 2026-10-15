@@ -122,6 +122,52 @@ export async function execute(sql: string, params: DbValue[] = []): Promise<numb
   return rawRun(sql, params);
 }
 
+export type DatabaseTransaction = {
+  readonly dialect: "sqlite" | "postgres";
+  query<T = Record<string, unknown>>(sql: string, params?: DbValue[]): Promise<T[]>;
+  execute(sql: string, params?: DbValue[]): Promise<number>;
+};
+
+export async function transaction<T>(work: (tx: DatabaseTransaction) => Promise<T>): Promise<T> {
+  await ensureDatabase();
+  const current = await driver();
+
+  if (current.kind === "sqlite") {
+    current.client.exec("BEGIN IMMEDIATE");
+    const tx: DatabaseTransaction = {
+      dialect: "sqlite",
+      query: async <Row>(sql: string, params: DbValue[] = []) =>
+        current.client.prepare(sql).all(...(params as SQLInputValue[])) as Row[],
+      execute: async (sql: string, params: DbValue[] = []) =>
+        Number(current.client.prepare(sql).run(...(params as SQLInputValue[])).changes),
+    };
+    try {
+      const result = await work(tx);
+      current.client.exec("COMMIT");
+      return result;
+    } catch (error) {
+      current.client.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  const result = await current.client.begin(async (connection) => {
+    const tx: DatabaseTransaction = {
+      dialect: "postgres",
+      query: async <Row>(sql: string, params: DbValue[] = []) => {
+        const rows = await connection.unsafe(postgresPlaceholders(sql), params as never[]);
+        return rows as unknown as Row[];
+      },
+      execute: async (sql: string, params: DbValue[] = []) => {
+        const result = await connection.unsafe(postgresPlaceholders(sql), params as never[]);
+        return result.count;
+      },
+    };
+    return { value: await work(tx) };
+  });
+  return result.value;
+}
+
 export async function closeDatabase(): Promise<void> {
   if (!driverPromise) return;
   const current = await driverPromise;

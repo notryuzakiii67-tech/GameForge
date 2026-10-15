@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    await requireAdmin();
+    const actor = await requireAdmin();
     const games = await query<{
       id: string; title: string; slug: string; description: string; genre: string; created_at: string; developer: string; username: string;
       version_number: number | null; validation_status: string | null; entry_point: string | null;
@@ -25,10 +25,15 @@ export async function GET() {
               (SELECT MAX(v.version_number) FROM ai_project_versions v WHERE v.project_id = p.id) AS version_number
        FROM ai_projects p JOIN users u ON u.id = p.owner_id
        WHERE p.status = 'pending' AND p.visibility = 'private' ORDER BY p.updated_at ASC LIMIT 100`);
+    const suspendedUsers = actor.role === "admin"
+      ? await query<{ id: string; username: string; display_name: string; role: string; updated_at: string }>(
+        `SELECT id, username, display_name, role, updated_at FROM users WHERE account_status = 'suspended' ORDER BY updated_at DESC LIMIT 100`)
+      : [];
     const reports = await query<{
       id: string; target_type: string; target_id: string; reason: string; details: string; created_at: string; username: string;
       target_slug: string | null; target_title: string | null; target_is_demo: number | null;
       target_game_version: number | null; target_game_entry: string | null;
+      target_user_role: string | null; target_user_status: string | null;
     }>(
       `SELECT r.id, r.target_type, r.target_id, r.reason, r.details, r.created_at, u.username,
               CASE r.target_type
@@ -43,18 +48,24 @@ export async function GET() {
               END AS target_title,
               CASE r.target_type WHEN 'game' THEN (SELECT g.is_demo FROM games g WHERE g.id = r.target_id) ELSE 0 END AS target_is_demo,
               CASE r.target_type WHEN 'game' THEN (SELECT v.version_number FROM game_versions v WHERE v.game_id = r.target_id AND v.validation_status = 'validated' ORDER BY v.version_number DESC LIMIT 1) END AS target_game_version,
-              CASE r.target_type WHEN 'game' THEN (SELECT v.entry_point FROM game_versions v WHERE v.game_id = r.target_id AND v.validation_status = 'validated' ORDER BY v.version_number DESC LIMIT 1) END AS target_game_entry
+              CASE r.target_type WHEN 'game' THEN (SELECT v.entry_point FROM game_versions v WHERE v.game_id = r.target_id AND v.validation_status = 'validated' ORDER BY v.version_number DESC LIMIT 1) END AS target_game_entry,
+              CASE r.target_type WHEN 'user' THEN (SELECT target.role FROM users target WHERE target.id = r.target_id) END AS target_user_role,
+              CASE r.target_type WHEN 'user' THEN (SELECT target.account_status FROM users target WHERE target.id = r.target_id) END AS target_user_status
        FROM reports r JOIN users u ON u.id = r.reporter_id
        WHERE r.status = 'open' ORDER BY r.created_at ASC LIMIT 100`);
     return Response.json({
       games: games.map((game) => ({ id: game.id, title: game.title, slug: game.slug, description: game.description, genre: game.genre, submittedAt: game.created_at, developer: { displayName: game.developer, username: game.username }, buildVersion: game.version_number, entryPoint: game.entry_point || "index.html", validationStatus: game.validation_status })),
       projects: projects.map((project) => ({ id: project.id, title: project.title, description: project.description, genre: project.genre, submittedAt: project.updated_at, version: project.version_number ?? 1, creator: { displayName: project.display_name, username: project.username } })),
+      suspendedUsers: suspendedUsers.map((account) => ({ id: account.id, username: account.username, displayName: account.display_name, role: account.role, suspendedAt: account.updated_at })),
       reports: reports.map((report) => ({
         ...report,
         createdAt: report.created_at,
         reporterUsername: report.username,
         targetTitle: report.target_title,
         targetIsDemo: report.target_is_demo === 1,
+        targetUserId: report.target_type === "user" ? report.target_id : null,
+        targetUserRole: report.target_user_role,
+        targetUserStatus: report.target_user_status,
         targetHref: report.target_type === "game"
           ? report.target_slug && report.target_is_demo === 1
             ? `/games/${encodeURIComponent(report.target_slug)}`

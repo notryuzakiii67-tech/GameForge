@@ -1,5 +1,49 @@
-import { execute, query } from "@/lib/db";
+import { execute, newId, query, transaction } from "@/lib/db";
 import { ApiError } from "@/lib/http";
+
+export async function setAccountStatus(actorId: string, targetId: string, status: "active" | "suspended", timestamp: string, note: string): Promise<void> {
+  if (actorId === targetId) throw new ApiError(409, "SELF_MODERATION_BLOCKED", "You cannot change your own account status.");
+  const normalizedNote = note.trim();
+  if (normalizedNote.length < 3 || normalizedNote.length > 500) {
+    throw new ApiError(400, "MODERATION_NOTE_REQUIRED", "Provide a moderation note between 3 and 500 characters.");
+  }
+
+  await transaction(async (tx) => {
+    // Serialize administrator account decisions so concurrent requests cannot suspend every active admin.
+    // BEGIN IMMEDIATE provides the corresponding writer lock for SQLite.
+    if (tx.dialect === "postgres") {
+      await tx.query(`SELECT id FROM users WHERE role = 'admin' AND account_status = 'active' ORDER BY id FOR UPDATE`);
+    }
+    const actors = await tx.query<{ role: string; account_status: string }>(
+      `SELECT role, account_status FROM users WHERE id = ? LIMIT 1`, [actorId]);
+    if (!actors[0] || actors[0].role !== "admin" || actors[0].account_status !== "active") {
+      throw new ApiError(403, "ADMIN_REQUIRED", "Active site administrator access is required.");
+    }
+
+    const users = await tx.query<{ id: string; role: string; account_status: string }>(
+      `SELECT id, role, account_status FROM users WHERE id = ? LIMIT 1`, [targetId]);
+    const target = users[0];
+    if (!target) throw new ApiError(404, "USER_NOT_FOUND", "That account could not be found.");
+    if (target.account_status === status) throw new ApiError(409, "ACCOUNT_STATUS_UNCHANGED", `That account is already ${status}.`);
+    if (target.account_status !== "active" && target.account_status !== "suspended") {
+      throw new ApiError(409, "ACCOUNT_STATUS_UNSUPPORTED", "That account has a status this console cannot change.");
+    }
+    if (status === "suspended" && target.role === "admin") {
+      const activeAdmins = await tx.query<{ count: number }>(`SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND account_status = 'active'`);
+      if (Number(activeAdmins[0]?.count ?? 0) <= 1) throw new ApiError(409, "LAST_ADMIN_REQUIRED", "The last active administrator cannot be suspended.");
+    }
+
+    const changed = await tx.execute(`UPDATE users SET account_status = ?, updated_at = ? WHERE id = ? AND account_status = ?`,
+      [status, timestamp, targetId, target.account_status]);
+    if (!changed) throw new ApiError(409, "ACCOUNT_STATUS_CHANGED", "The account changed while moderation was being processed. Refresh and try again.");
+    if (status === "suspended") await tx.execute(`DELETE FROM sessions WHERE user_id = ?`, [targetId]);
+    await tx.execute(
+      `INSERT INTO audit_events(id, actor_id, event_type, target_type, target_id, details_json, created_at)
+       VALUES (?, ?, ?, 'user', ?, ?, ?)`,
+      [newId(), actorId, `user.${status === "suspended" ? "suspend" : "restore"}`, targetId, JSON.stringify({ note: normalizedNote }), timestamp],
+    );
+  });
+}
 
 export async function takeDownReportedContent(targetType: string, targetId: string, timestamp: string): Promise<string[]> {
   if (targetType === "game") {
@@ -45,5 +89,5 @@ export async function takeDownReportedContent(targetType: string, targetId: stri
     return removed;
   }
 
-  throw new ApiError(400, "TAKEDOWN_NOT_SUPPORTED", "Reports about accounts can be actioned or dismissed, but account suspension is not available in this console.");
+  throw new ApiError(400, "TAKEDOWN_NOT_SUPPORTED", "Content takedowns apply only to games and AI projects. Use site-admin account controls to act on a user report.");
 }
