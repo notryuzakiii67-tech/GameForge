@@ -36,7 +36,8 @@ const nextConfig: NextConfig = {
         source: "/demos/:path*",
         headers: [
           { key: "Content-Security-Policy", value: demoCsp },
-          { key: "Cross-Origin-Resource-Policy", value: "same-site" },
+          // Sandboxed iframes have opaque origins, so same-site blocks their own local assets.
+          { key: "Cross-Origin-Resource-Policy", value: "cross-origin" },
           { key: "Cache-Control", value: "public, max-age=3600" },
         ],
       },

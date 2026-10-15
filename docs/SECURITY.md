@@ -32,6 +32,7 @@ Structural validation is **not** antivirus scanning, a malware scan, a human cod
 ### Browser isolation
 
 - Game players use an iframe `sandbox` without `allow-same-origin`, top-navigation, popups, or unrestricted storage permissions. The response also includes a restrictive Content Security Policy, `X-Content-Type-Options: nosniff`, and explicit MIME types.
+- Bundled demo resources use `Cross-Origin-Resource-Policy: cross-origin` because a sandboxed document has an opaque origin; `same-site` would block the game from loading its own CSS and JavaScript. This policy does not grant DOM/storage access or add iframe permissions. Demo CSP still sets `connect-src 'none'`, and the iframe does not grant `allow-same-origin`.
 - Published games are served from the dedicated production content origin. Production auth cookies use the `__Host-` prefix and do not domain-share with that host.
 - The game CSP blocks external connections and limits scripts, frames, forms, and resource types. Local development may serve games on the app origin; the separate-host boundary is a **production requirement**.
 

@@ -20,8 +20,8 @@ export default async function GamesPage({ searchParams }: { searchParams: Search
   } catch {
     setupIssue = true;
   }
-  const showDemo = process.env.NODE_ENV !== "production" && games.length === 0;
-  if (showDemo) {
+  const useDemoFallback = process.env.NODE_ENV !== "production" && games.length === 0;
+  if (useDemoFallback) {
     games = demoGames.filter((game) => {
       const matchesGenre = selectedGenre === "All" || game.genre.toLowerCase() === selectedGenre.toLowerCase();
       const term = q.toLowerCase();
@@ -29,6 +29,7 @@ export default async function GamesPage({ searchParams }: { searchParams: Search
       return matchesGenre && matchesSearch;
     });
   }
+  const starterOnly = games.length > 0 && games.every((game) => game.isDemo);
 
   return <div className="page-wrap page-content">
     <header className="page-header page-header-row">
@@ -44,13 +45,13 @@ export default async function GamesPage({ searchParams }: { searchParams: Search
       <select className="select-input" name="sort" defaultValue={sort} aria-label="Sort games">
         <option value="recent">Recently published</option><option value="top-rated">Top rated</option><option value="favorites">Most favorited</option>
       </select>
-      {!setupIssue && <span className="discovery-count">{showDemo ? `${games.length} playable starter demos` : `${games.length} ${games.length === 1 ? "game" : "games"}`}</span>}
+      {!setupIssue && <span className="discovery-count">{starterOnly ? `${games.length} starter builds` : `${games.length} ${games.length === 1 ? "game" : "games"}`}</span>}
     </form>
     <div className="filter-row" aria-label="Popular genres">
       <Link className={`filter-chip${selectedGenre === "All" ? " active" : ""}`} href="/games">All games</Link>
       {genres.slice(0, 10).map((genre) => <Link key={genre} className={`filter-chip${selectedGenre.toLowerCase() === genre.toLowerCase() ? " active" : ""}`} href={`/games?genre=${encodeURIComponent(genre)}`}>{genre}</Link>)}
     </div>
-    {showDemo && <div className="notice notice-info" style={{ marginBottom: 15 }}>Development preview: the cards below are labeled playable starter demos. Connect PostgreSQL and run <code>npm run db:seed</code> for a database-backed local catalog.</div>}
+    {starterOnly && <div className="notice notice-info" style={{ marginBottom: 15 }}>{useDemoFallback ? <>Development preview: starter demos have recorded headless Chromium playthroughs. Physical-device and production-host checks remain outstanding; each card lists its outcome and limits. Connect PostgreSQL and run <code>npm run db:seed</code> for a database-backed local catalog.</> : "This catalog currently contains only labeled starter builds. Headless-browser outcomes are recorded per game; physical-device and production-host checks remain outstanding. Check each verification note."}</div>}
     {games.length ? <div className="game-grid">{games.map((game) => <GameCard key={game.id} game={game} />)}</div> : <div className="empty-state-card"><span className="empty-state-symbol"><Search size={21} /></span><strong>No games found</strong><p>{setupIssue ? "The catalog could not load from the database." : "Try another search or clear your filters."}</p><Link className="button button-dark button-small" href="/games">Clear filters</Link></div>}
   </div>;
 }

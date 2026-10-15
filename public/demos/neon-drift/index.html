@@ -1,18 +1,133 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#090b13"><title>Neon Drift — GameForge demo</title>
 <style>
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#080b12;color:#eef1ff;font:500 15px ui-sans-serif,system-ui,sans-serif}body{display:grid;place-items:center;padding:14px}.shell{width:min(100%,900px)}.hud{display:flex;align-items:center;justify-content:space-between;padding:0 3px 12px;color:#989eb4;font-size:13px;letter-spacing:.08em;text-transform:uppercase}.hud b{color:#fff;font-size:18px;letter-spacing:0}.board{position:relative;overflow:hidden;border:1px solid #292e44;border-radius:18px;background:#0d1120;box-shadow:0 30px 100px #0009}.board canvas{display:block;width:100%;height:auto;aspect-ratio:16/10;touch-action:none}.overlay{position:absolute;inset:0;display:grid;place-items:center;background:linear-gradient(180deg,#080b1270,#090b12d9);text-align:center;padding:24px}.overlay[hidden]{display:none}.panel{max-width:370px}.eyebrow{color:#8d7dff;font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}.panel h1{font-size:clamp(32px,7vw,54px);letter-spacing:-.06em;margin:10px 0}.panel p{color:#aab0c5;line-height:1.6;margin:0 auto 20px}.button{border:0;border-radius:12px;padding:12px 20px;background:#816cff;color:white;font-weight:800;font-size:14px;cursor:pointer;box-shadow:0 6px 28px #806cff50}.button:hover{background:#9686ff}.controls{display:flex;justify-content:space-between;align-items:center;color:#7e859d;font-size:12px;padding:10px 3px 0}.touch{display:none;gap:7px}.touch button{width:36px;height:34px;border:1px solid #343950;background:#171b2a;color:#eee;border-radius:9px;font-size:14px}@media(max-width:620px){body{padding:8px}.board{border-radius:12px}.controls{font-size:10px}.touch{display:flex}}
-</style></head><body><main class="shell"><div class="hud"><span>GAMEFORGE STARTER GAME</span><span>ENERGY <b id="score">000</b></span><span>TIME <b id="time">45</b></span></div><section class="board"><canvas id="game" width="800" height="500" aria-label="Neon Drift game area"></canvas><div class="overlay" id="overlay"><div class="panel"><div class="eyebrow">A tiny browser game</div><h1 id="headline">Neon Drift</h1><p id="message">Collect the glowing energy orbs. Keep moving, dodge the pulse rings, and chase your best run.</p><button class="button" id="start">Start drifting</button></div></div></section><div class="controls"><span>MOVE · WASD / ARROW KEYS</span><div class="touch"><button data-dir="up" aria-label="Move up">↑</button><button data-dir="left" aria-label="Move left">←</button><button data-dir="down" aria-label="Move down">↓</button><button data-dir="right" aria-label="Move right">→</button></div><span>45 SEC · COLLECT + DODGE</span></div></main>
-<script>
-(()=>{const c=document.querySelector('#game'),ctx=c.getContext('2d'),overlay=document.querySelector('#overlay'),start=document.querySelector('#start'),scoreEl=document.querySelector('#score'),timeEl=document.querySelector('#time');let state='ready',score=0,time=45,last=0,player={x:400,y:250,r:10,vx:0,vy:0},keys=new Set(),orbs=[],hazards=[],particles=[],raf=0;
-const rand=(a,b)=>Math.random()*(b-a)+a;function orb(){orbs.push({x:rand(35,765),y:rand(35,465),r:7,p:rand(0,6.2)})}function hazard(){hazards.push({x:rand(40,760),y:rand(40,460),r:rand(18,30),phase:rand(0,6.2),speed:rand(.55,1.1)})}function reset(){cancelAnimationFrame(raf);state='playing';score=0;time=45;last=0;player={x:400,y:250,r:10,vx:0,vy:0};orbs=[];hazards=[];particles=[];for(let i=0;i<7;i++)orb();for(let i=0;i<3;i++)hazard();overlay.hidden=true;scoreEl.textContent='000';timeEl.textContent='45';raf=requestAnimationFrame(loop)}
-function end(){state='over';overlay.hidden=false;document.querySelector('#headline').textContent=time<=0?'Run complete':'Drift interrupted';document.querySelector('#message').textContent=`You gathered ${score} energy ${score===1?'orb':'orbs'}. Want to take another run?`;start.textContent='Play again'}
-function draw(t,dt){ctx.clearRect(0,0,800,500);ctx.fillStyle='#0b1020';ctx.fillRect(0,0,800,500);for(let x=0;x<800;x+=40){ctx.strokeStyle='rgba(125,119,255,.07)';ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,500);ctx.stroke()}for(let y=0;y<500;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(800,y);ctx.stroke()}
-for(const h of hazards){h.phase+=dt*h.speed;const pulse=1+Math.sin(h.phase)*.12;ctx.beginPath();ctx.arc(h.x,h.y,h.r*pulse,0,Math.PI*2);ctx.strokeStyle='rgba(255,91,151,.58)';ctx.lineWidth=3;ctx.shadowBlur=18;ctx.shadowColor='#ff4e96';ctx.stroke();ctx.beginPath();ctx.arc(h.x,h.y,h.r*.52,0,Math.PI*2);ctx.fillStyle='rgba(255,72,138,.18)';ctx.fill();ctx.shadowBlur=0}
-for(const o of orbs){o.p+=dt*3;ctx.beginPath();ctx.arc(o.x,o.y,o.r+Math.sin(o.p)*1.6,0,7);ctx.fillStyle='#72f3da';ctx.shadowBlur=18;ctx.shadowColor='#72f3da';ctx.fill();ctx.shadowBlur=0}
-ctx.beginPath();ctx.arc(player.x,player.y,player.r,0,7);ctx.fillStyle='#d5caff';ctx.shadowBlur=24;ctx.shadowColor='#9382ff';ctx.fill();ctx.shadowBlur=0;ctx.beginPath();ctx.arc(player.x,player.y,3,0,7);ctx.fillStyle='#fff';ctx.fill();for(const p of particles){p.life-=dt;ctx.globalAlpha=Math.max(0,p.life);ctx.beginPath();ctx.arc(p.x,p.y,3*p.life,0,7);ctx.fillStyle='#87ffe8';ctx.fill()}ctx.globalAlpha=1;particles=particles.filter(p=>p.life>0)}
-function loop(ts){if(state!=='playing')return;const dt=Math.min((ts-last)/1000||0,.035);last=ts;time-=dt;if(time<=0){time=0;timeEl.textContent='0';draw(ts,dt);end();return}let ax=0,ay=0;if(keys.has('ArrowLeft')||keys.has('a'))ax--;if(keys.has('ArrowRight')||keys.has('d'))ax++;if(keys.has('ArrowUp')||keys.has('w'))ay--;if(keys.has('ArrowDown')||keys.has('s'))ay++;if(ax&&ay){ax*=.707;ay*=.707}player.vx+=(ax*380-player.vx)*Math.min(1,dt*8);player.vy+=(ay*380-player.vy)*Math.min(1,dt*8);player.x=Math.max(12,Math.min(788,player.x+player.vx*dt));player.y=Math.max(12,Math.min(488,player.y+player.vy*dt));
-for(let i=orbs.length-1;i>=0;i--){const o=orbs[i];if(Math.hypot(player.x-o.x,player.y-o.y)<player.r+o.r+4){score+=10;scoreEl.textContent=String(score).padStart(3,'0');for(let n=0;n<8;n++)particles.push({x:o.x,y:o.y,life:1});orbs.splice(i,1);orb()}}
-for(const h of hazards){if(Math.hypot(player.x-h.x,player.y-h.y)<player.r+h.r*.6){time=Math.max(0,time-3);player.x=400;player.y=250;h.x=rand(30,770);h.y=rand(30,470);break}}timeEl.textContent=String(Math.ceil(time));draw(ts,dt);raf=requestAnimationFrame(loop)}
-start.addEventListener('click',reset);document.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();keys.add(e.key);if(e.key===' '&&state!=='playing')reset()});document.addEventListener('keyup',e=>keys.delete(e.key));window.addEventListener('blur',()=>keys.clear());document.querySelectorAll('[data-dir]').forEach(b=>{const dir=b.dataset.dir,map={up:'ArrowUp',down:'ArrowDown',left:'ArrowLeft',right:'ArrowRight'},key=map[dir];b.addEventListener('pointerdown',e=>{e.preventDefault();keys.add(key)});['pointerup','pointercancel','pointerleave'].forEach(type=>b.addEventListener(type,()=>keys.delete(key)))});draw(0,0)})();
-</script></body></html>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#080b12;color:#eef1ff;font:500 15px ui-sans-serif,system-ui,sans-serif}body{display:grid;place-items:center;padding:14px}.shell{width:min(100%,900px)}.hud{display:flex;align-items:center;justify-content:space-between;padding:0 3px 12px;color:#989eb4;font-size:13px;letter-spacing:.08em;text-transform:uppercase}.hud b{color:#fff;font-size:18px;letter-spacing:0}.board{position:relative;overflow:hidden;border:1px solid #292e44;border-radius:18px;background:#0d1120;box-shadow:0 30px 100px #0009}.board canvas{display:block;width:100%;height:auto;aspect-ratio:16/10;touch-action:none}.overlay{position:absolute;inset:0;display:grid;place-items:center;background:linear-gradient(180deg,#080b1270,#090b12d9);text-align:center;padding:24px}.overlay[hidden]{display:none}.panel{max-width:370px}.eyebrow{color:#8d7dff;font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}.panel h1{font-size:clamp(32px,7vw,54px);letter-spacing:-.06em;margin:10px 0}.panel p{color:#aab0c5;line-height:1.6;margin:0 auto 20px}.button{border:0;border-radius:12px;padding:12px 20px;background:#816cff;color:white;font-weight:800;font-size:14px;cursor:pointer;box-shadow:0 6px 28px #806cff50}.button:hover{background:#9686ff}.controls{display:flex;justify-content:space-between;align-items:center;color:#7e859d;font-size:12px;padding:10px 3px 0}.touch{display:none;gap:7px}.touch button{width:36px;height:34px;border:1px solid #343950;background:#171b2a;color:#eee;border-radius:9px;font-size:14px;touch-action:none}.pause-button{border:1px solid #343950;background:#171b2a;color:#d7d9e9;border-radius:8px;padding:7px 10px;font:inherit;font-size:11px;cursor:pointer}.pause-button:disabled{opacity:.45;cursor:not-allowed}.pause-button:not(:disabled):hover{border-color:#8d7dff;color:#fff}.board canvas:focus{outline:2px solid #8d7dff;outline-offset:-3px}@media(max-width:620px){body{padding:8px}.board{border-radius:12px}.controls{font-size:10px}.touch{display:flex}}
+</style></head><body><main class="shell"><div class="hud"><span>GAMEFORGE STARTER GAME</span><span>ENERGY <b id="score">000</b></span><span>TIME <b id="time">45</b></span></div><section class="board"><canvas id="game" width="800" height="500" tabindex="0" aria-label="Neon Drift game area"></canvas><div class="overlay" id="overlay"><div class="panel"><div class="eyebrow">A tiny browser game</div><h1 id="headline">Neon Drift</h1><p id="message">Collect the glowing energy orbs. Keep moving, dodge the pulse rings, and chase your best run.</p><button class="button" id="start">Start drifting</button></div></div></section><div class="controls"><span>MOVE · WASD / ARROW KEYS</span><div class="touch"><button data-dir="up" aria-label="Move up">↑</button><button data-dir="left" aria-label="Move left">←</button><button data-dir="down" aria-label="Move down">↓</button><button data-dir="right" aria-label="Move right">→</button></div><span>45 SEC · COLLECT + DODGE</span><button class="pause-button" id="pause" disabled aria-pressed="false">Pause</button></div></main>
+<script src="engine.js"></script>
+<script>(()=>{
+  const engine=window.GameForgeNeonDriftEngine;
+  const canvas=document.querySelector('#game');
+  const ctx=canvas.getContext('2d');
+  const overlay=document.querySelector('#overlay');
+  const startButton=document.querySelector('#start');
+  const pauseButton=document.querySelector('#pause');
+  const scoreEl=document.querySelector('#score');
+  const timeEl=document.querySelector('#time');
+  const keys=new Set();
+  let state=engine.makeReadyState();
+  let particles=[];
+  let last=0;
+  let raf=0;
+  let dpr=1;
+
+  function resizeCanvas(){
+    dpr=Math.min(2,window.devicePixelRatio||1);
+    canvas.width=Math.round(engine.width*dpr);
+    canvas.height=Math.round(engine.height*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    if(state.phase!=='playing')draw(0,0);
+  }
+
+  function draw(dt){
+    ctx.clearRect(0,0,engine.width,engine.height);
+    ctx.fillStyle='#0b1020';ctx.fillRect(0,0,engine.width,engine.height);
+    for(let x=0;x<engine.width;x+=40){ctx.strokeStyle='rgba(125,119,255,.07)';ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,engine.height);ctx.stroke()}
+    for(let y=0;y<engine.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(engine.width,y);ctx.stroke()}
+    for(const hazard of state.hazards){
+      const pulse=1+Math.sin(hazard.phase)*.12;
+      ctx.beginPath();ctx.arc(hazard.x,hazard.y,hazard.r*pulse,0,Math.PI*2);ctx.strokeStyle='rgba(255,91,151,.58)';ctx.lineWidth=3;ctx.shadowBlur=18;ctx.shadowColor='#ff4e96';ctx.stroke();
+      ctx.beginPath();ctx.arc(hazard.x,hazard.y,hazard.r*.52,0,Math.PI*2);ctx.fillStyle='rgba(255,72,138,.18)';ctx.fill();ctx.shadowBlur=0;
+    }
+    for(const orb of state.orbs){
+      ctx.beginPath();ctx.arc(orb.x,orb.y,orb.r+Math.sin(orb.phase)*1.6,0,Math.PI*2);ctx.fillStyle='#72f3da';ctx.shadowBlur=18;ctx.shadowColor='#72f3da';ctx.fill();ctx.shadowBlur=0;
+    }
+    const player=state.player;
+    const heading=Math.atan2(player.vy,player.vx);
+    ctx.save();ctx.translate(player.x,player.y);ctx.rotate(heading);
+    ctx.beginPath();ctx.moveTo(player.r+5,0);ctx.lineTo(-player.r*.8,-player.r*.72);ctx.lineTo(-player.r*.4,0);ctx.lineTo(-player.r*.8,player.r*.72);ctx.closePath();
+    ctx.fillStyle='#d5caff';ctx.shadowBlur=24;ctx.shadowColor='#9382ff';ctx.fill();ctx.shadowBlur=0;ctx.restore();
+    for(const particle of particles)particle.life=Math.max(0,particle.life-dt);
+    particles=particles.filter(particle=>particle.life>0);
+    for(const particle of particles){ctx.globalAlpha=particle.life;ctx.beginPath();ctx.arc(particle.x,particle.y,Math.max(0,3*particle.life),0,Math.PI*2);ctx.fillStyle=particle.color||'#87ffe8';ctx.fill()}
+    ctx.globalAlpha=1;
+  }
+
+  function updateHud(){
+    scoreEl.textContent=String(state.score).padStart(3,'0');
+    timeEl.textContent=String(Math.ceil(state.time));
+    pauseButton.disabled=state.phase!=='playing'&&state.phase!=='paused';
+    pauseButton.textContent=state.phase==='paused'?'Resume':'Pause';
+    pauseButton.setAttribute('aria-pressed',String(state.phase==='paused'));
+  }
+
+  function showOverlay(headline,message,label){
+    overlay.hidden=false;
+    document.querySelector('#headline').textContent=headline;
+    document.querySelector('#message').textContent=message;
+    startButton.textContent=label;
+  }
+
+  function beginOrResume(){
+    if(state.phase==='paused')state=engine.resumeGame(state);
+    else{
+      state=engine.startGame();
+      particles=[];
+    }
+    keys.clear();last=0;overlay.hidden=true;updateHud();canvas.focus({preventScroll:true});
+    cancelAnimationFrame(raf);raf=requestAnimationFrame(loop);
+  }
+
+  function pause(){
+    if(state.phase!=='playing')return;
+    state=engine.pauseGame(state);keys.clear();cancelAnimationFrame(raf);raf=0;last=0;
+    showOverlay('Drift paused','Your run is paused. Resume when you are ready.','Resume');updateHud();draw(0);
+  }
+
+  function finish(){
+    cancelAnimationFrame(raf);raf=0;keys.clear();updateHud();draw(0);
+    showOverlay('Run complete',`You gathered ${state.score} energy ${state.score===1?'orb':'orbs'}. Want to take another run?`,'Play again');
+  }
+
+  function loop(timestamp){
+    if(state.phase!=='playing')return;
+    const dt=last?Math.min((timestamp-last)/1000,.05):0;
+    last=timestamp;
+    state=engine.stepGame(state,engine.vectorForKeys(keys),dt,Math.random);
+    for(const event of state.events){
+      if(event.type==='orb')for(let index=0;index<8;index++)particles.push({x:event.x,y:event.y,life:1,color:'#87ffe8'});
+      if(event.type==='collision')for(let index=0;index<5;index++)particles.push({x:event.x,y:event.y,life:1,color:'#ff7eac'});
+    }
+    updateHud();draw(dt);
+    if(state.phase==='over'){finish();return}
+    raf=requestAnimationFrame(loop);
+  }
+
+  const controlledKeys=new Set(['arrowleft','arrowright','arrowup','arrowdown','a','d','w','s']);
+  document.addEventListener('keydown',event=>{
+    const key=event.key.toLowerCase();
+    if(controlledKeys.has(key)){
+      event.preventDefault();keys.add(key);
+    }else if(key==='p'&&state.phase==='playing'){
+      event.preventDefault();pause();
+    }else if(key===' '&&state.phase!=='playing'&&state.phase!=='paused'){
+      event.preventDefault();beginOrResume();
+    }
+  });
+  document.addEventListener('keyup',event=>keys.delete(event.key.toLowerCase()));
+  window.addEventListener('blur',()=>{keys.clear();pause()});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){keys.clear();pause()}});
+  startButton.addEventListener('click',beginOrResume);
+  pauseButton.addEventListener('click',()=>state.phase==='playing'?pause():beginOrResume());
+  document.querySelectorAll('[data-dir]').forEach(button=>{
+    const key={up:'arrowup',down:'arrowdown',left:'arrowleft',right:'arrowright'}[button.dataset.dir];
+    const release=event=>{event.preventDefault();keys.delete(key)};
+    button.addEventListener('pointerdown',event=>{event.preventDefault();keys.add(key);try{button.setPointerCapture(event.pointerId)}catch{}});
+    button.addEventListener('pointerup',release);
+    button.addEventListener('pointercancel',release);
+    button.addEventListener('lostpointercapture',release);
+  });
+
+  if('ResizeObserver'in window)new ResizeObserver(resizeCanvas).observe(canvas);
+  window.addEventListener('resize',resizeCanvas,{passive:true});
+  resizeCanvas();updateHud();draw(0);
+})();</script></body></html>

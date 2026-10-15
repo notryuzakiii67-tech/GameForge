@@ -41,13 +41,14 @@ export default async function GamePage({ params }: { params: Promise<{ slug: str
     <div className="breadcrumb"><Link href="/games">Games</Link><span>/</span><Link href={`/games?genre=${encodeURIComponent(game.genre)}`}>{game.genre}</Link><span>/</span><strong>{game.title}</strong></div>
     {failed && <div className="notice notice-info" style={{ marginBottom: 15 }}>Showing local starter content. The database-backed catalog is currently unavailable.</div>}
     <div className="game-detail-top">
-      <GamePlayer title={game.title} src={src} controls={game.controls} demo={game.isDemo} />
+      <GamePlayer title={game.title} src={src} controls={game.controls} demo={game.isDemo} sandboxCapabilities={game.sandboxCapabilities} aspect={game.playerAspect} />
       <aside className="game-side-card">
-        <div className="game-side-top"><span className="genre-pill">{game.genre}</span>{game.isDemo && <span className="demo-pill-static">DEMO</span>}</div>
+        <div className="game-side-top"><span className="genre-pill">{game.genre}</span>{game.isDemo && <span className="demo-pill-static">DEMO</span>}{game.verificationStatus && <span className={`verification-pill verification-${game.verificationStatus}`}>{game.verificationStatus === "not-fully-tested" ? "NOT FULLY TESTED" : game.verificationStatus.toUpperCase()}</span>}</div>
         <h1>{game.title}</h1>
-        <div className="game-byline"><span className="avatar">{initials}</span><span><small>MADE BY</small><Link href={game.developerUsername ? `/developers/${game.developerUsername}` : "/developers"}>{game.developer}</Link></span><Link className="byline-arrow" href={game.developerUsername ? `/developers/${game.developerUsername}` : "/developers"} aria-label={`View ${game.developer} creator profile`}><ExternalLink size={14} /></Link></div>
+        <div className="game-byline"><span className="avatar">{initials}</span><span><small>MADE BY</small>{game.developerUsername ? <Link href={`/developers/${game.developerUsername}`}>{game.developer}</Link> : <span>{game.developer}</span>}</span>{game.developerUsername && <Link className="byline-arrow" href={`/developers/${game.developerUsername}`} aria-label={`View ${game.developer} creator profile`}><ExternalLink size={14} /></Link>}</div>
         <p>{game.description}</p>
         <div className="game-actions"><FavoriteButton gameId={game.id} initialCount={game.favoriteCount} /><ShareButton /></div>
+        {game.verificationNote && <div className="verification-note" role="note"><strong>Verification status</strong><span>{game.verificationNote}</span></div>}
         <div className="game-info-list">
           <div className="game-info-item"><span>Genre</span><span>{game.genre}</span></div>
           <div className="game-info-item"><span>Build</span><span>{game.version}</span></div>
@@ -69,9 +70,9 @@ export default async function GamePage({ params }: { params: Promise<{ slug: str
       </div>
       <div className="game-detail-side-column">
         <section className="game-description-card rate-card"><div className="card-title-with-icon"><span><Heart size={15} /></span><h2>Enjoyed the game?</h2></div><p>A quick rating helps other players find something they’ll love.</p><RatingControl gameId={game.id} /><span className="rate-note">One rating per account · you can update it anytime</span></section>
-        <section className="game-description-card"><div className="card-title-with-icon"><span><CalendarDays size={15} /></span><h2>Build notes</h2></div><div className="build-note-row"><span>Version</span><strong>{game.version}</strong></div><div className="build-note-row"><span>Updated</span><strong>{game.updatedAt ? new Date(game.updatedAt).toLocaleDateString() : "Starter build"}</strong></div><div className="build-note-row"><span>License</span><strong>{game.license}</strong></div><p className="build-note-safe">This game runs as untrusted client-side code in a restricted iframe. GameForge does not execute uploaded code on its server.</p></section>
+        <section className="game-description-card"><div className="card-title-with-icon"><span><CalendarDays size={15} /></span><h2>Build notes</h2></div><div className="build-note-row"><span>Version</span><strong>{game.version}</strong></div><div className="build-note-row"><span>Updated</span><strong>{game.updatedAt ? new Date(game.updatedAt).toLocaleDateString() : "Starter build"}</strong></div><div className="build-note-row"><span>License</span><strong>{game.license}</strong></div>{game.sourceUrl && <div className="build-note-row"><span>Source</span><a href={game.sourceUrl} target="_blank" rel="noopener noreferrer">Pinned upstream revision</a></div>}{game.sourceAttribution && <p className="build-note-safe">{game.sourceAttribution}</p>}<p className="build-note-safe">This game runs as untrusted client-side code in a restricted iframe. GameForge does not execute uploaded code on its server.</p></section>
         {related.length > 0 && <section className="related-games"><div className="related-title"><h2>More to explore</h2><Link href={`/games?genre=${encodeURIComponent(game.genre)}`}>All <ArrowRight size={12} /></Link></div>{related.slice(0, 2).map((item) => <GameCard key={item.id} game={item} compact />)}</section>}
-        {game.isDemo && <div className="notice notice-info demo-game-note"><Sparkles size={14} /><span>This is a playable GameForge starter demo. Seed your local database to enable saving and reviews for these examples.</span></div>}
+        {game.isDemo && <div className="notice notice-info demo-game-note"><Sparkles size={14} /><span>Starter build. The verification note records the headless-browser outcome and remaining limits; physical-device and production-host checks have not been performed. Seed your local database to enable platform ratings and reviews for these examples.</span></div>}
       </div>
     </div>
   </div>;

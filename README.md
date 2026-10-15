@@ -33,7 +33,7 @@ These phases describe the implementation scope in this codebase, not ten externa
 npm install
 cp .env.example .env.local
 npm run db:migrate
-npm run db:seed        # optional: adds clearly labeled, playable demo games
+npm run db:seed        # optional: adds labeled starter builds with verification notes
 npm run dev
 ```
 
@@ -66,3 +66,4 @@ The tests cover ZIP/path/resource validation, generated-project validation, AI p
 - [Security model and checklist](docs/SECURITY.md)
 - [Vercel deployment](docs/VERCEL.md)
 - [Ten-phase scope and verification status](docs/PHASES.md)
+- [Game candidate, license, and verification audit](docs/game-candidate-audit.md)

@@ -433,3 +433,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* Verification and provenance labels for the playable-library audit. */
+.verification-pill, .verification-label { display: inline-flex; align-items: center; width: fit-content; padding: 3px 6px; border: 1px solid #826c3d66; border-radius: 5px; color: #e5ca86; background: #ae8b2814; font-size: 7px; font-weight: 800; letter-spacing: .07em; line-height: 1.35; }
+.verification-label { margin-top: 8px; }
+.verification-tested { border-color: #4f966b80; color: #9ce3b6; background: #207b401a; }
+.verification-blocked { border-color: #b4505080; color: #f3a0a0; background: #7d22221a; }
+.verification-note { display: grid; gap: 5px; margin: -4px 0 13px; padding: 9px 10px; border: 1px solid #8d754233; border-radius: 8px; color: #d9c691; background: #7f622012; font-size: 8px; line-height: 1.55; }
+.verification-note strong { font-size: 7px; letter-spacing: .1em; text-transform: uppercase; }
+.game-card-blocked .game-cover-link { cursor: not-allowed; }
+.game-card-blocked .cover-play-blocked { color: #f2a4a4; background: #421b1bd9; }
+.build-note-row a { color: #b9aaff; font-size: 9px; text-align: right; }
+.player-stage.player-stage-square { aspect-ratio: 1 / 1; min-height: 320px; }
+.player-stage.player-stage-portrait { aspect-ratio: 4 / 5; min-height: 320px; }
+@media (max-width: 620px) {
+  .player-stage.player-stage-square { min-height: 280px; }
+  .player-stage.player-stage-portrait { min-height: 630px; }
+  .verification-note { font-size: 8px; }
+}

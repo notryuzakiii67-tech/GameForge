@@ -1,5 +1,86 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#16111a"><title>One More Room — GameForge demo</title><style>
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#121018;color:#f5edf2;font:500 15px ui-sans-serif,system-ui,sans-serif}body{display:grid;place-items:center;padding:18px}.wrap{width:min(100%,720px);padding:clamp(18px,4vw,38px);border:1px solid #3a2d3d;border-radius:22px;background:radial-gradient(ellipse at 50% -20%,#4e3548 0%,#241b29 47%,#17131d 100%);box-shadow:0 32px 100px #0008}.heading{display:flex;justify-content:space-between;align-items:center;color:#bea9ba;font-size:11px;letter-spacing:.14em;text-transform:uppercase}.heading strong{color:#f0d4bb;font-size:13px;letter-spacing:.04em}.intro{text-align:center;margin:34px 0 24px}.intro h1{font:500 clamp(34px,7vw,56px)/1 Georgia,serif;letter-spacing:-.06em;margin:0;color:#f7e9dc}.intro p{max-width:470px;margin:12px auto 0;color:#c7b6c6;line-height:1.6}.maze{display:grid;grid-template-columns:repeat(8,1fr);gap:7px;max-width:490px;margin:auto}.cell{aspect-ratio:1;border-radius:9px;border:1px solid #45324a;background:#2a2130;display:grid;place-items:center;font-size:clamp(15px,4vw,28px);transition:background .15s}.cell.wall{background:#18141e;border-color:#302635}.cell.hero{background:#60445c;border-color:#d6a8ca;box-shadow:0 0 18px #c671b24a}.cell.key{color:#ffd680}.cell.door{color:#a8e7c7}.cell.ghost{background:#663546;border-color:#e07487}.status{display:flex;justify-content:space-between;gap:12px;max-width:490px;margin:20px auto 0;color:#bbaaba;font-size:12px}.chip{padding:7px 10px;border:1px solid #4e3b4e;border-radius:999px;color:#ffe5c9}.actions{display:flex;gap:10px;justify-content:center;margin-top:22px}.btn{border:1px solid #a87381;border-radius:11px;padding:10px 16px;color:#fff1e7;background:#563646;font-weight:750;cursor:pointer}.btn:hover{background:#714858}.overlay{position:fixed;inset:0;display:grid;place-items:center;background:#110d16e8;padding:20px}.overlay[hidden]{display:none}.modal{max-width:400px;padding:32px;border:1px solid #604557;border-radius:20px;background:#261c2b;text-align:center;box-shadow:0 30px 120px #000c}.modal .icon{font-size:36px}.modal h2{font:500 32px Georgia,serif;margin:8px}.modal p{color:#ccb8c8;line-height:1.65}.mobile{display:none;grid-template-columns:repeat(3,42px);gap:5px;margin:18px auto 0;width:max-content}.mobile button{height:40px;border:1px solid #574256;border-radius:9px;background:#302438;color:#f2e5ec;font-size:18px}.mobile button:nth-child(1){grid-column:2}.mobile button:nth-child(2){grid-column:1;grid-row:2}.mobile button:nth-child(3){grid-column:2;grid-row:2}.mobile button:nth-child(4){grid-column:3;grid-row:2}@media(max-width:540px){body{padding:8px}.wrap{padding:14px;border-radius:16px}.maze{gap:5px}.cell{border-radius:6px}.status{font-size:10px}.mobile{display:grid}}
-</style></head><body><main class="wrap"><div class="heading"><span>GAMEFORGE STARTER GAME</span><strong>ROOM 01 · BRASS KEY</strong></div><section class="intro"><h1>One More Room</h1><p>Find the brass key, then reach the green door. The wandering shadow will send you back to the entrance if it catches you.</p></section><div class="maze" id="maze" role="grid" aria-label="One More Room board"></div><div class="status"><span>MOVE · WASD / ARROWS</span><span class="chip" id="keyStatus">Key missing</span><span>ONE SHADOW</span></div><div class="mobile"><button data-dir="up" aria-label="Up">↑</button><button data-dir="left" aria-label="Left">←</button><button data-dir="down" aria-label="Down">↓</button><button data-dir="right" aria-label="Right">→</button></div><div class="actions"><button class="btn" id="reset">Restart room</button></div></main><div class="overlay" id="overlay"><section class="modal"><div class="icon">⌁</div><h2 id="headline">The hall is quiet… for now</h2><p id="message">Collect the brass key, avoid the shadow, and unlock the door. Take your time — the shadow only moves when you do.</p><button class="btn" id="start">Enter room</button></section></div><script>
-(()=>{const W=8,H=6,walls=new Set(['2,0','4,0','2,1','4,1','6,1','0,2','2,2','5,2','6,2','2,3','4,3','6,3','1,4','4,4','6,4','1,5','3,5']),start={x:0,y:0},keyAt={x:5,y:0},door={x:7,y:5};let hero={...start},ghost={x:7,y:0},hasKey=false,running=false,moves=0;const maze=document.querySelector('#maze'),overlay=document.querySelector('#overlay'),keyStatus=document.querySelector('#keyStatus');function render(){maze.innerHTML='';for(let y=0;y<H;y++)for(let x=0;x<W;x++){const cell=document.createElement('div');cell.className='cell';const k=`${x},${y}`;if(walls.has(k))cell.classList.add('wall');if(hero.x===x&&hero.y===y){cell.classList.add('hero');cell.textContent='☺'}else if(!hasKey&&keyAt.x===x&&keyAt.y===y){cell.classList.add('key');cell.textContent='⚿'}else if(door.x===x&&door.y===y){cell.classList.add('door');cell.textContent=hasKey?'▣':'▤'}else if(ghost.x===x&&ghost.y===y){cell.classList.add('ghost');cell.textContent='◌'}maze.append(cell)}keyStatus.textContent=hasKey?'Key found':'Key missing'}function finish(won){running=false;overlay.hidden=false;document.querySelector('#headline').textContent=won?'Door unlocked':'The shadow found you';document.querySelector('#message').textContent=won?`You made it through in ${moves} moves. There’s another room beyond the door…`:'The shadow sent you back to the entrance. The key is waiting — give it another try.';document.querySelector('#start').textContent=won?'Play again':'Try again'}function ghostTurn(){const options=[[0,1],[0,-1],[-1,0],[1,0]].filter(([dx,dy])=>{const x=ghost.x+dx,y=ghost.y+dy;return x>=0&&y>=0&&x<W&&y<H&&!walls.has(`${x},${y}`)});if(!options.length)return;options.sort((a,b)=>Math.abs(ghost.x+a[0]-hero.x)+Math.abs(ghost.y+a[1]-hero.y)-(Math.abs(ghost.x+b[0]-hero.x)+Math.abs(ghost.y+b[1]-hero.y)));const move=options[Math.random()<.68?0:Math.floor(Math.random()*options.length)];ghost.x+=move[0];ghost.y+=move[1]}function move(dx,dy){if(!running)return;const x=hero.x+dx,y=hero.y+dy;if(x<0||y<0||x>=W||y>=H||walls.has(`${x},${y}`))return;hero={x,y};moves++;if(x===keyAt.x&&y===keyAt.y)hasKey=true;if(x===door.x&&y===door.y){render();finish(hasKey);return}ghostTurn();if(ghost.x===hero.x&&ghost.y===hero.y){hero={...start};ghost={x:7,y:0}}render()}function begin(){hero={...start};ghost={x:7,y:0};hasKey=false;moves=0;running=true;overlay.hidden=true;render()}document.querySelector('#start').addEventListener('click',begin);document.querySelector('#reset').addEventListener('click',begin);document.addEventListener('keydown',e=>{const d={ArrowUp:[0,-1],w:[0,-1],ArrowDown:[0,1],s:[0,1],ArrowLeft:[-1,0],a:[-1,0],ArrowRight:[1,0],d:[1,0]};if(d[e.key]){e.preventDefault();move(...d[e.key])}});document.querySelectorAll('[data-dir]').forEach(b=>b.addEventListener('click',()=>{const d={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};move(...d[b.dataset.dir])}));render()})();
-</script></body></html>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#121018;color:#f5edf2;font:500 15px ui-sans-serif,system-ui,sans-serif}body{display:grid;place-items:center;padding:18px}.wrap{width:min(100%,720px);padding:clamp(18px,4vw,38px);border:1px solid #3a2d3d;border-radius:22px;background:radial-gradient(ellipse at 50% -20%,#4e3548 0%,#241b29 47%,#17131d 100%);box-shadow:0 32px 100px #0008}.heading{display:flex;justify-content:space-between;align-items:center;color:#bea9ba;font-size:11px;letter-spacing:.14em;text-transform:uppercase}.heading strong{color:#f0d4bb;font-size:13px;letter-spacing:.04em}.intro{text-align:center;margin:34px 0 24px}.intro h1{font:500 clamp(34px,7vw,56px)/1 Georgia,serif;letter-spacing:-.06em;margin:0;color:#f7e9dc}.intro p{max-width:470px;margin:12px auto 0;color:#c7b6c6;line-height:1.6}.maze{display:grid;grid-template-columns:repeat(8,1fr);gap:7px;max-width:490px;margin:auto}.cell{aspect-ratio:1;border-radius:9px;border:1px solid #45324a;background:#2a2130;display:grid;place-items:center;font-size:clamp(15px,4vw,28px);transition:background .15s}.cell.wall{background:#18141e;border-color:#302635}.cell.hero{background:#60445c;border-color:#d6a8ca;box-shadow:0 0 18px #c671b24a}.cell.key{color:#ffd680}.cell.door{color:#a8e7c7}.cell.ghost{background:#663546;border-color:#e07487}.status{display:flex;justify-content:space-between;gap:12px;max-width:490px;margin:20px auto 0;color:#bbaaba;font-size:12px}.state-message{min-height:18px;margin:8px auto 0;max-width:490px;color:#f0c987;text-align:center;font-size:12px}.chip{padding:7px 10px;border:1px solid #4e3b4e;border-radius:999px;color:#ffe5c9}.actions{display:flex;gap:10px;justify-content:center;margin-top:22px}.btn{border:1px solid #a87381;border-radius:11px;padding:10px 16px;color:#fff1e7;background:#563646;font-weight:750;cursor:pointer}.btn:hover{background:#714858}.overlay{position:fixed;inset:0;display:grid;place-items:center;background:#110d16e8;padding:20px}.overlay[hidden]{display:none}.modal{max-width:400px;padding:32px;border:1px solid #604557;border-radius:20px;background:#261c2b;text-align:center;box-shadow:0 30px 120px #000c}.modal .icon{font-size:36px}.modal h2{font:500 32px Georgia,serif;margin:8px}.modal p{color:#ccb8c8;line-height:1.65}.mobile{display:none;grid-template-columns:repeat(3,42px);gap:5px;margin:18px auto 0;width:max-content}.mobile button{height:40px;border:1px solid #574256;border-radius:9px;background:#302438;color:#f2e5ec;font-size:18px}.mobile button:nth-child(1){grid-column:2}.mobile button:nth-child(2){grid-column:1;grid-row:2}.mobile button:nth-child(3){grid-column:2;grid-row:2}.mobile button:nth-child(4){grid-column:3;grid-row:2}@media(max-width:540px){body{padding:8px}.wrap{padding:14px;border-radius:16px}.maze{gap:5px}.cell{border-radius:6px}.status{font-size:10px}.mobile{display:grid}}
+@media(max-height:420px){body.playing{display:block;height:100vh;min-height:100vh;overflow:hidden;padding:6px}.wrap{width:100%;max-width:720px;margin:0 auto;padding:8px}.playing .heading,.playing .intro{display:none}.playing .maze{width:min(100%,490px,calc(100vh - 165px));gap:3px}.playing .cell{border-radius:5px}.playing .status{margin:4px auto 0}.playing .state-message{min-height:0;margin:2px auto}.playing .mobile{display:grid;margin:4px auto 0;gap:3px}.playing .mobile button{width:38px;height:34px}.playing .actions{margin-top:4px}.playing .btn{padding:7px 12px}.overlay{padding:6px}.modal{max-height:calc(100vh - 12px);overflow:auto;padding:16px}.modal h2{font-size:26px}.modal p{font-size:13px}}
+</style></head><body><main class="wrap"><div class="heading"><span>GAMEFORGE STARTER GAME</span><strong>ROOM 01 · BRASS KEY</strong></div><section class="intro"><h1>One More Room</h1><p>Find the brass key, then reach the green door. The wandering shadow will send you back to the entrance if it catches you.</p></section><div class="maze" id="maze" role="grid" aria-label="One More Room board"></div><div class="status"><span>MOVE · WASD / ARROWS</span><span class="chip" id="keyStatus">Key missing</span><span>ONE SHADOW</span></div><p class="state-message" id="stateMessage" role="status" aria-live="polite"></p><div class="mobile"><button data-dir="up" aria-label="Up">↑</button><button data-dir="left" aria-label="Left">←</button><button data-dir="down" aria-label="Down">↓</button><button data-dir="right" aria-label="Right">→</button></div><div class="actions"><button class="btn" id="reset">Restart room</button></div></main><div class="overlay" id="overlay"><section class="modal"><div class="icon">⌁</div><h2 id="headline">The hall is quiet… for now</h2><p id="message">Collect the brass key, avoid the shadow, and unlock the door. Take your time — the shadow only moves when you do.</p><button class="btn" id="start">Enter room</button></section></div><script src="../maze-engine.js"></script>
+<script>(()=>{
+  const engine=window.GameForgeMazeEngine;
+  const map=engine.maps.oneMoreRoom;
+  const maze=document.querySelector('#maze');
+  const overlay=document.querySelector('#overlay');
+  const keyStatus=document.querySelector('#keyStatus');
+  const stateMessage=document.querySelector('#stateMessage');
+  const startButton=document.querySelector('#start');
+  let state=engine.createOneMoreRoomState(map);
+
+  function render(){
+    maze.innerHTML='';
+    for(let y=0;y<map.height;y++) for(let x=0;x<map.width;x++){
+      const point={x,y};
+      const cell=document.createElement('div');
+      const isHero=x===state.player.x&&y===state.player.y;
+      const isGhost=x===state.ghost.x&&y===state.ghost.y;
+      const isKey=x===map.key.x&&y===map.key.y&&!state.hasKey;
+      const isDoor=x===map.exit.x&&y===map.exit.y;
+      const wall=engine.isWall(map,point);
+      cell.className='cell';
+      cell.setAttribute('role','gridcell');
+      cell.setAttribute('aria-label',isHero?'Player':isGhost?'Wandering shadow':isKey?'Brass key':isDoor?'Exit door':wall?'Wall':'Maze path');
+      if(wall)cell.classList.add('wall');
+      if(isHero){cell.classList.add('hero');cell.textContent='☺'}
+      else if(isKey){cell.classList.add('key');cell.textContent='⚿'}
+      else if(isDoor){cell.classList.add('door');cell.textContent=state.hasKey?'▣':'▤'}
+      else if(isGhost){cell.classList.add('ghost');cell.textContent='◌'}
+      maze.append(cell);
+    }
+    keyStatus.textContent=state.hasKey?'Key found':`Key missing${state.catches?` · caught ${state.catches}×`:''}`;
+  }
+
+  function finish(won){
+    state={...state,active:false,outcome:won?'won':'lost'};
+    overlay.hidden=false;
+    document.querySelector('#headline').textContent=won?'Door unlocked':'The door is still locked';
+    document.querySelector('#message').textContent=won
+      ? `You made it through in ${state.moves} moves. There’s another room beyond the door…`
+      : 'You reached the door without the brass key. Find the key, then try the exit again.';
+    startButton.textContent=won?'Play again':'Try again';
+  }
+
+  function move(dx,dy){
+    const next=engine.moveOneMoreRoom(state,dx,dy,map);
+    if(next===state)return;
+    state=next;
+    stateMessage.textContent=state.notice;
+    render();
+    if(state.outcome==='won'||state.outcome==='lost')finish(state.outcome==='won');
+  }
+
+  function begin(){
+    document.body.classList.add('playing');
+    state=engine.restartOneMoreRoom(map);
+    stateMessage.textContent='';
+    overlay.hidden=true;
+    startButton.textContent='Play again';
+    render();
+  }
+
+  const keys={arrowup:[0,-1],w:[0,-1],arrowdown:[0,1],s:[0,1],arrowleft:[-1,0],a:[-1,0],arrowright:[1,0],d:[1,0]};
+  document.querySelector('#start').addEventListener('click',begin);
+  document.querySelector('#reset').addEventListener('click',begin);
+  document.addEventListener('keydown',event=>{
+    const direction=keys[event.key.toLowerCase()];
+    if(!direction)return;
+    event.preventDefault();
+    move(direction[0],direction[1]);
+  });
+  document.querySelectorAll('[data-dir]').forEach(button=>button.addEventListener('click',()=>{
+    const direction={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]}[button.dataset.dir];
+    move(direction[0],direction[1]);
+  }));
+
+  if(!engine.findWinningPath({...map,collectibles:[map.key]})){
+    startButton.disabled=true;
+    document.querySelector('#message').textContent='This room failed its solvability check. Please reload or contact the site operator.';
+    stateMessage.textContent='Maze validation failed.';
+  }
+  render();
+})();</script></body></html>

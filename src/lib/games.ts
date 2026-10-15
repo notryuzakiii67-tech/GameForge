@@ -1,9 +1,9 @@
 import { query } from "@/lib/db";
-import type { GameCardData } from "@/lib/demo-games";
+import { findDemoGame, type GameCardData } from "@/lib/demo-games";
 
 export type GameDetails = GameCardData & {
   developerId: string;
-  developerUsername: string;
+  developerUsername?: string;
   version: string;
   publishedAt: string | null;
   updatedAt: string;
@@ -62,23 +62,33 @@ function parseArray(raw: string | null | undefined, fallback: string[] = []): st
 }
 
 function mapCard(row: GameRow): GameCardData {
+  const demoMetadata = row.is_demo === 1 ? findDemoGame(row.slug) : undefined;
   return {
     id: row.id,
     slug: row.slug,
     title: row.title,
-    developer: row.developer_name,
-    developerUsername: row.developer_username,
+    developer: demoMetadata?.sourceUrl ? demoMetadata.developer : row.developer_name,
+    developerUsername: demoMetadata?.sourceUrl ? undefined : row.developer_username,
     genre: row.genre,
     description: row.description,
-    cover: row.cover_image || "/art/neon-drift.svg",
-    accent: "#8c7cff",
+    cover: demoMetadata?.cover || row.cover_image || "/art/neon-drift.svg",
+    accent: demoMetadata?.accent || "#8c7cff",
     status: row.status,
     isDemo: row.is_demo === 1,
     averageRating: row.average_rating === null ? null : Number(row.average_rating),
     ratingCount: Number(row.rating_count || 0),
     fileVersion: row.version_number ?? undefined,
     entryPoint: row.entry_point,
-    tags: parseArray(row.tags_json),
+    tags: demoMetadata?.tags ?? parseArray(row.tags_json),
+    controls: demoMetadata?.controls ?? row.controls,
+    instructions: demoMetadata?.instructions ?? row.instructions,
+    license: demoMetadata?.license ?? row.license,
+    sourceUrl: demoMetadata?.sourceUrl,
+    sourceAttribution: demoMetadata?.sourceAttribution,
+    verificationStatus: demoMetadata?.verificationStatus,
+    verificationNote: demoMetadata?.verificationNote,
+    sandboxCapabilities: demoMetadata?.sandboxCapabilities,
+    playerAspect: demoMetadata?.playerAspect,
   };
 }
 
@@ -129,13 +139,15 @@ export async function searchGames(input: {
   const limit = Math.max(1, Math.min(48, input.limit ?? 12));
   const offset = Math.max(0, Math.min(5000, input.offset ?? 0));
   const rows = await query<GameRow>(`${baseSelect} WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT ? OFFSET ?`, [...values, limit, offset]);
-  return rows.map(mapCard);
+  return rows.map(mapCard).filter((game) => game.verificationStatus !== "blocked");
 }
 
 export async function getGameBySlug(slug: string): Promise<GameDetails | null> {
   const rows = await query<GameRow>(`${baseSelect} WHERE g.slug = ? AND g.status = 'published' AND g.visibility = 'public' LIMIT 1`, [slug]);
   const row = rows[0];
-  return row ? mapDetails(row) : null;
+  if (!row) return null;
+  const game = mapDetails(row);
+  return game.verificationStatus === "blocked" ? null : game;
 }
 
 export async function getOwnedGameById(id: string): Promise<GameDetails | null> {
@@ -148,15 +160,15 @@ function mapDetails(row: GameRow): GameDetails {
   return {
     ...card,
     developerId: row.developer_id,
-    developerUsername: row.developer_username,
+    developerUsername: card.sourceUrl ? undefined : row.developer_username,
     version: row.version,
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
-    controls: row.controls,
-    instructions: row.instructions,
+    controls: card.controls ?? row.controls,
+    instructions: card.instructions ?? row.instructions,
     platform: parseArray(row.platform_json, ["browser"]),
     warnings: parseArray(row.content_warnings_json),
-    license: row.license,
+    license: card.license ?? row.license,
     remixEnabled: row.remix_enabled === 1,
     versionNumber: row.version_number,
     storageKey: row.storage_key,
@@ -169,5 +181,5 @@ function mapDetails(row: GameRow): GameDetails {
 
 export async function getDemoGameRecords(): Promise<GameCardData[]> {
   const rows = await query<GameRow>(`${baseSelect} WHERE g.is_demo = 1 AND g.status = 'published' AND g.visibility = 'public' ORDER BY g.title`);
-  return rows.map(mapCard);
+  return rows.map(mapCard).filter((game) => game.verificationStatus !== "blocked");
 }

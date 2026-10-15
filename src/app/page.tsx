@@ -14,9 +14,10 @@ export default async function HomePage() {
   } catch {
     setupIssue = true;
   }
-  const isDemo = games.length === 0 && process.env.NODE_ENV !== "production";
-  if (isDemo) games = demoGames;
-  const featured = games[0] ?? (isDemo ? demoGames[0] : null);
+  const useDemoFallback = games.length === 0 && process.env.NODE_ENV !== "production";
+  if (useDemoFallback) games = demoGames;
+  const starterOnly = games.length > 0 && games.every((game) => game.isDemo);
+  const featured = games[0] ?? (useDemoFallback ? demoGames[0] : null);
   const starterGames = games.slice(0, 6);
 
   return <div className="home-page">
@@ -37,7 +38,7 @@ export default async function HomePage() {
           <div className="hero-image-frame">
             <img src={featured.cover || "/art/neon-drift.svg"} alt={`${featured.title} game artwork`} />
             <div className="hero-image-shade" />
-            <div className="hero-game-caption"><span className="hero-caption-kicker">{isDemo ? "PLAYABLE STARTER" : featured.genre.toUpperCase()}</span><strong>{featured.title}</strong><span>{featured.isDemo ? "Made for your browser · demo game" : `By ${featured.developer}`}</span></div>
+            <div className="hero-game-caption"><span className="hero-caption-kicker">{featured.isDemo ? "STARTER BUILD" : featured.genre.toUpperCase()}</span><strong>{featured.title}</strong><span>{featured.isDemo ? "Starter build · verification noted below" : `By ${featured.developer}`}</span></div>
             <Link href={`/games/${featured.slug}`} className="hero-play" aria-label={`Play ${featured.title}`}><span><Gamepad2 size={18} fill="currentColor" /></span></Link>
           </div>
           <div className="float-card float-card-top"><span className="float-icon float-purple"><Sparkles size={16} /></span><span><strong>Idea → playable</strong><small>Your next game starts here</small></span></div>
@@ -60,9 +61,9 @@ export default async function HomePage() {
     {setupIssue && process.env.NODE_ENV === "production" ? <section className="config-callout page-wrap"><div className="config-callout-icon">!</div><div><strong>GameForge needs its database connection.</strong><p>Discovery will be available once <code>DATABASE_URL</code> points to your production PostgreSQL database. No example metrics or placeholder games are being shown.</p></div></section> : null}
 
     <section className="section-block page-wrap">
-      <div className="section-heading"><div><div className="eyebrow eyebrow-small"><span className="section-mark" /> THE ARCADE</div><h2>{isDemo ? "A few worlds to wander" : "Fresh from the forge"}</h2><p>{isDemo ? "Three actual, playable demos to try while you explore." : "New browser games, ready when you are."}</p></div><Link href="/games" className="text-link">Explore all games <ArrowRight size={15} /></Link></div>
+      <div className="section-heading"><div><div className="eyebrow eyebrow-small"><span className="section-mark" /> THE ARCADE</div><h2>{starterOnly ? "A few worlds to wander" : "Fresh from the forge"}</h2><p>{starterOnly ? `${games.length} labeled starter builds; each listing shows its verification status.` : "New browser games, ready when you are."}</p></div><Link href="/games" className="text-link">Explore all games <ArrowRight size={15} /></Link></div>
       {starterGames.length ? <div className="game-grid">{starterGames.map((game) => <GameCard key={game.id} game={game} />)}</div> : <div className="empty-state-card"><span className="empty-state-symbol"><Gamepad2 size={23} /></span><strong>No public games yet</strong><p>Be the first creator to bring a game to GameForge.</p><Link className="button button-primary button-small" href="/dashboard">Create a game <ArrowRight size={14} /></Link></div>}
-      {isDemo && <p className="demo-disclaimer"><span className="status-dot" /> Starter examples are labeled demo content. Ratings and player counts are not invented.</p>}
+      {starterOnly && <p className="demo-disclaimer"><span className="status-dot" /> Starter examples are labeled demo content. Ratings and player counts are not invented.</p>}
     </section>
 
     <section className="studio-promo page-wrap">

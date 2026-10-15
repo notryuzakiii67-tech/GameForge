@@ -1,6 +1,87 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b1512"><title>Mosslight — GameForge demo</title><style>
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#0b1512;color:#edf7ed;font:500 15px ui-sans-serif,system-ui,sans-serif}body{display:grid;place-items:center;padding:18px}.game{width:min(100%,720px);padding:clamp(18px,4vw,38px);border:1px solid #264337;border-radius:22px;background:radial-gradient(ellipse at 50% -20%,#28553f 0%,#142a20 50%,#0d1a15 100%);box-shadow:0 28px 90px #0007}.top{display:flex;justify-content:space-between;align-items:center;color:#92b39b;font-size:11px;letter-spacing:.14em;text-transform:uppercase}.top strong{color:#e4f4e6;font-size:13px;letter-spacing:.02em}.intro{text-align:center;margin:34px 0 24px}.intro h1{font-family:Georgia,serif;font-weight:500;font-size:clamp(34px,7vw,56px);letter-spacing:-.06em;margin:0;color:#e7f2dc}.intro p{max-width:470px;margin:10px auto 0;color:#a8c0a8;line-height:1.6}.board{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;max-width:470px;margin:0 auto}.tile{aspect-ratio:1;border:1px solid #315b43;border-radius:12px;background:#1a3928;color:#d9f2a7;display:grid;place-items:center;font-size:clamp(18px,4vw,29px);cursor:pointer;user-select:none;transition:transform .12s,background .12s}.tile:hover{transform:translateY(-2px);background:#28533a}.tile.wall{background:#14261c;border-color:#203d2b;cursor:default}.tile.wall:hover{transform:none}.tile.player{background:#476c48;border-color:#a9e1a3;box-shadow:0 0 20px #88e89c66}.tile.exit{border-color:#cfb56a;color:#ffdf83}.tile.light{background:#30472b;color:#f5e99b;box-shadow:0 0 18px #ffeb7b66}.footer{display:flex;justify-content:space-between;align-items:center;gap:15px;margin:23px auto 0;max-width:470px;color:#9db59e;font-size:12px}.pill{padding:8px 11px;border:1px solid #355440;border-radius:999px;color:#e7f1df}.actions{display:flex;gap:8px;justify-content:center;margin-top:22px}.button{border:1px solid #739373;border-radius:11px;padding:10px 16px;color:#f0f7e8;background:#284832;font-weight:750;cursor:pointer}.button:hover{background:#365d40}.overlay{position:fixed;inset:0;display:grid;place-items:center;background:#06100edb;padding:20px;text-align:center}.overlay[hidden]{display:none}.modal{max-width:390px;padding:30px;border:1px solid #406447;border-radius:20px;background:#14291f;box-shadow:0 30px 120px #000b}.modal .leaf{font-size:36px}.modal h2{font-family:Georgia,serif;font-size:32px;font-weight:500;margin:8px}.modal p{color:#aec4ae;line-height:1.6}.mobile{display:none;grid-template-columns:repeat(3,42px);gap:5px;margin:18px auto 0;width:max-content}.mobile button{height:40px;border:1px solid #365440;border-radius:9px;background:#1b3828;color:#e9f5e7;font-size:18px}.mobile button:nth-child(1){grid-column:2}.mobile button:nth-child(2){grid-column:1;grid-row:2}.mobile button:nth-child(3){grid-column:2;grid-row:2}.mobile button:nth-child(4){grid-column:3;grid-row:2}@media(max-width:540px){body{padding:8px}.game{padding:14px;border-radius:16px}.board{gap:5px}.tile{border-radius:8px}.mobile{display:grid}.footer{font-size:10px}}
-</style></head><body><main class="game"><div class="top"><span>GAMEFORGE STARTER GAME</span><strong>🌿 QUIET WOODS</strong></div><section class="intro"><h1>Mosslight</h1><p>Help the little keeper find every firefly, then reach the moon gate. The stone paths are safe; the moss hides the way.</p></section><div class="board" id="board" role="grid" aria-label="Mosslight puzzle board"></div><div class="footer"><span>Move with arrow keys or tap a neighboring tile</span><span class="pill" id="count">Lights 0 / 3</span></div><div class="mobile"><button data-move="up" aria-label="Up">↑</button><button data-move="left" aria-label="Left">←</button><button data-move="down" aria-label="Down">↓</button><button data-move="right" aria-label="Right">→</button></div><div class="actions"><button class="button" id="reset">Start over</button></div></main><div class="overlay" id="overlay"><div class="modal"><div class="leaf">✦</div><h2 id="headline">A small forest puzzle</h2><p id="message">Gather three fireflies hidden in the clearing. Moss blocks the way, so follow the pale stones to the gate.</p><button class="button" id="start">Enter the clearing</button></div></div><script>
-(()=>{const W=7,H=5,walls=new Set(['1,0','1,1','3,1','5,1','2,2','5,2','1,3','3,3','5,3','2,4']),start={x:0,y:0},exit={x:6,y:4};let player={...start},lights=new Set(['4,0','6,2','4,4']),collected=new Set(),active=false;const board=document.querySelector('#board'),overlay=document.querySelector('#overlay'),count=document.querySelector('#count');function render(){board.innerHTML='';for(let y=0;y<H;y++)for(let x=0;x<W;x++){const key=`${x},${y}`,cell=document.createElement('button');cell.className='tile';cell.setAttribute('role','gridcell');cell.setAttribute('aria-label',key===`${player.x},${player.y}`?'Forest keeper':key===`${exit.x},${exit.y}`?'Moon gate':lights.has(key)&&!collected.has(key)?'Firefly':'Forest path');if(walls.has(key))cell.classList.add('wall');if(x===player.x&&y===player.y){cell.classList.add('player');cell.textContent='✦'}else if(x===exit.x&&y===exit.y){cell.classList.add('exit');cell.textContent='☾'}else if(lights.has(key)&&!collected.has(key)){cell.classList.add('light');cell.textContent='✧'}else if(walls.has(key)){cell.textContent='•'}else cell.textContent='';cell.disabled=!active||walls.has(key);cell.addEventListener('click',()=>{if(Math.abs(player.x-x)+Math.abs(player.y-y)===1)move(x-player.x,y-player.y)});board.append(cell)}count.textContent=`Lights ${collected.size} / 3`}
-function finish(won){active=false;overlay.hidden=false;document.querySelector('#headline').textContent=won?'The woods are glowing':'The gate is still waiting';document.querySelector('#message').textContent=won?'Every firefly found its way home. Beautifully done.':'Find all three fireflies before stepping through the moon gate.';document.querySelector('#start').textContent='Play again'}function move(dx,dy){if(!active)return;const x=player.x+dx,y=player.y+dy,key=`${x},${y}`;if(x<0||y<0||x>=W||y>=H||walls.has(key))return;player={x,y};if(lights.has(key))collected.add(key);if(x===exit.x&&y===exit.y){render();finish(collected.size===3);return}render()}function begin(){player={...start};collected=new Set();active=true;overlay.hidden=true;render()}document.querySelector('#start').addEventListener('click',begin);document.querySelector('#reset').addEventListener('click',begin);document.addEventListener('keydown',e=>{const dirs={ArrowUp:[0,-1],w:[0,-1],ArrowDown:[0,1],s:[0,1],ArrowLeft:[-1,0],a:[-1,0],ArrowRight:[1,0],d:[1,0]};if(dirs[e.key]){e.preventDefault();move(...dirs[e.key])}});document.querySelectorAll('[data-move]').forEach(button=>button.addEventListener('click',()=>{const dirs={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};move(...dirs[button.dataset.move])}));render()})();
-</script></body></html>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#0b1512;color:#edf7ed;font:500 15px ui-sans-serif,system-ui,sans-serif}body{display:grid;place-items:center;padding:18px}.game{width:min(100%,720px);padding:clamp(18px,4vw,38px);border:1px solid #264337;border-radius:22px;background:radial-gradient(ellipse at 50% -20%,#28553f 0%,#142a20 50%,#0d1a15 100%);box-shadow:0 28px 90px #0007}.top{display:flex;justify-content:space-between;align-items:center;color:#92b39b;font-size:11px;letter-spacing:.14em;text-transform:uppercase}.top strong{color:#e4f4e6;font-size:13px;letter-spacing:.02em}.intro{text-align:center;margin:34px 0 24px}.intro h1{font-family:Georgia,serif;font-weight:500;font-size:clamp(34px,7vw,56px);letter-spacing:-.06em;margin:0;color:#e7f2dc}.intro p{max-width:470px;margin:10px auto 0;color:#a8c0a8;line-height:1.6}.board{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;max-width:470px;margin:0 auto}.tile{aspect-ratio:1;border:1px solid #315b43;border-radius:12px;background:#1a3928;color:#d9f2a7;display:grid;place-items:center;font-size:clamp(18px,4vw,29px);cursor:pointer;user-select:none;transition:transform .12s,background .12s}.tile:hover{transform:translateY(-2px);background:#28533a}.tile.wall{background:#14261c;border-color:#203d2b;cursor:default}.tile.wall:hover{transform:none}.tile.player{background:#476c48;border-color:#a9e1a3;box-shadow:0 0 20px #88e89c66}.tile.exit{border-color:#cfb56a;color:#ffdf83}.tile.light{background:#30472b;color:#f5e99b;box-shadow:0 0 18px #ffeb7b66}.footer{display:flex;justify-content:space-between;align-items:center;gap:15px;margin:23px auto 0;max-width:470px;color:#9db59e;font-size:12px}.state-message{min-height:18px;margin:8px auto 0;max-width:470px;color:#f2d78c;text-align:center;font-size:12px}.pill{padding:8px 11px;border:1px solid #355440;border-radius:999px;color:#e7f1df}.actions{display:flex;gap:8px;justify-content:center;margin-top:22px}.button{border:1px solid #739373;border-radius:11px;padding:10px 16px;color:#f0f7e8;background:#284832;font-weight:750;cursor:pointer}.button:hover{background:#365d40}.overlay{position:fixed;inset:0;display:grid;place-items:center;background:#06100edb;padding:20px;text-align:center}.overlay[hidden]{display:none}.modal{max-width:390px;padding:30px;border:1px solid #406447;border-radius:20px;background:#14291f;box-shadow:0 30px 120px #000b}.modal .leaf{font-size:36px}.modal h2{font-family:Georgia,serif;font-size:32px;font-weight:500;margin:8px}.modal p{color:#aec4ae;line-height:1.6}.mobile{display:none;grid-template-columns:repeat(3,42px);gap:5px;margin:18px auto 0;width:max-content}.mobile button{height:40px;border:1px solid #365440;border-radius:9px;background:#1b3828;color:#e9f5e7;font-size:18px}.mobile button:nth-child(1){grid-column:2}.mobile button:nth-child(2){grid-column:1;grid-row:2}.mobile button:nth-child(3){grid-column:2;grid-row:2}.mobile button:nth-child(4){grid-column:3;grid-row:2}@media(max-width:540px){body{padding:8px}.game{padding:14px;border-radius:16px}.board{gap:5px}.tile{border-radius:8px}.mobile{display:grid}.footer{font-size:10px}}
+@media(max-height:420px){body.playing{display:block;height:100vh;min-height:100vh;overflow:hidden;padding:6px}.game{width:100%;max-width:720px;margin:0 auto;padding:8px}.playing .top,.playing .intro{display:none}.playing .board{width:min(100%,470px,calc(100vh - 180px));gap:3px}.playing .footer{margin:4px auto 0}.playing .footer span:first-child{display:none}.playing .state-message{min-height:0;margin:2px auto}.playing .mobile{display:grid;margin:4px auto 0;gap:3px}.playing .mobile button{width:38px;height:34px}.playing .actions{margin-top:4px}.playing .button{padding:7px 12px}.overlay{padding:6px}.modal{max-height:calc(100vh - 12px);overflow:auto;padding:16px}.modal h2{font-size:26px}.modal p{font-size:13px}}
+</style></head><body><main class="game"><div class="top"><span>GAMEFORGE STARTER GAME</span><strong>🌿 QUIET WOODS</strong></div><section class="intro"><h1>Mosslight</h1><p>Help the little keeper find every firefly, then reach the moon gate. The stone paths are safe; the moss hides the way.</p></section><div class="board" id="board" role="grid" aria-label="Mosslight puzzle board"></div><div class="footer"><span>Move with arrow keys or tap a neighboring tile</span><span class="pill" id="count">Lights 0 / 3</span></div><p class="state-message" id="stateMessage" role="status" aria-live="polite"></p><div class="mobile"><button data-move="up" aria-label="Up">↑</button><button data-move="left" aria-label="Left">←</button><button data-move="down" aria-label="Down">↓</button><button data-move="right" aria-label="Right">→</button></div><div class="actions"><button class="button" id="reset">Start over</button></div></main><div class="overlay" id="overlay"><div class="modal"><div class="leaf">✦</div><h2 id="headline">A small forest puzzle</h2><p id="message">Gather three fireflies hidden in the clearing. Moss blocks the way, so follow the pale stones to the gate.</p><button class="button" id="start">Enter the clearing</button></div></div><script src="../maze-engine.js"></script>
+<script>(()=>{
+  const engine=window.GameForgeMazeEngine;
+  const map=engine.maps.mosslight;
+  const board=document.querySelector('#board');
+  const overlay=document.querySelector('#overlay');
+  const count=document.querySelector('#count');
+  const stateMessage=document.querySelector('#stateMessage');
+  const startButton=document.querySelector('#start');
+  let state=engine.createMosslightState(map);
+
+  function render(){
+    board.innerHTML='';
+    for(let y=0;y<map.height;y++) for(let x=0;x<map.width;x++){
+      const point={x,y};
+      const key=engine.cellKey(point);
+      const cell=document.createElement('button');
+      const isPlayer=x===state.player.x&&y===state.player.y;
+      const isExit=x===map.exit.x&&y===map.exit.y;
+      const light=map.collectibles.some(item=>item.x===x&&item.y===y)&&!state.collected.includes(key);
+      const wall=engine.isWall(map,point);
+      cell.className='tile';
+      cell.setAttribute('role','gridcell');
+      cell.setAttribute('aria-label',isPlayer?'Forest keeper':isExit?'Moon gate'+(state.collected.length===map.collectibles.length?' unlocked':' locked'):light?'Firefly':wall?'Moss wall':'Forest path');
+      if(wall) cell.classList.add('wall');
+      if(isPlayer){cell.classList.add('player');cell.textContent='✦'}
+      else if(isExit){cell.classList.add('exit');cell.textContent=state.collected.length===map.collectibles.length?'☾':'⊗'}
+      else if(light){cell.classList.add('light');cell.textContent='✧'}
+      else if(wall) cell.textContent='•';
+      cell.disabled=!state.active||wall;
+      cell.addEventListener('click',()=>{const dx=x-state.player.x,dy=y-state.player.y;if(Math.abs(dx)+Math.abs(dy)===1)move(dx,dy)});
+      board.append(cell);
+    }
+    count.textContent=`Lights ${state.collected.length} / ${map.collectibles.length}`;
+  }
+
+  function finish(){
+    state={...state,active:false,outcome:'won'};
+    overlay.hidden=false;
+    document.querySelector('#headline').textContent='The woods are glowing';
+    document.querySelector('#message').textContent=`Every firefly found its way home in ${state.moves} moves. Beautifully done.`;
+    startButton.textContent='Play again';
+    render();
+  }
+
+  function move(dx,dy){
+    const next=engine.moveMosslight(state,dx,dy,map);
+    if(next===state)return;
+    state=next;
+    stateMessage.textContent=state.notice;
+    render();
+    if(state.outcome==='won')finish();
+  }
+
+  function begin(){
+    document.body.classList.add('playing');
+    state=engine.restartMosslight(map);
+    stateMessage.textContent='';
+    overlay.hidden=true;
+    startButton.textContent='Play again';
+    render();
+  }
+
+  const keys={arrowup:[0,-1],w:[0,-1],arrowdown:[0,1],s:[0,1],arrowleft:[-1,0],a:[-1,0],arrowright:[1,0],d:[1,0]};
+  document.querySelector('#start').addEventListener('click',begin);
+  document.querySelector('#reset').addEventListener('click',begin);
+  document.addEventListener('keydown',event=>{
+    const direction=keys[event.key.toLowerCase()];
+    if(!direction)return;
+    event.preventDefault();
+    move(direction[0],direction[1]);
+  });
+  document.querySelectorAll('[data-move]').forEach(button=>button.addEventListener('click',()=>{
+    const direction={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]}[button.dataset.move];
+    move(direction[0],direction[1]);
+  }));
+
+  if(!engine.findWinningPath(map)){
+    startButton.disabled=true;
+    document.querySelector('#message').textContent='This maze failed its solvability check. Please reload or contact the site operator.';
+    stateMessage.textContent='Maze validation failed.';
+  }
+  render();
+})();</script></body></html>
