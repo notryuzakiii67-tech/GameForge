@@ -48,6 +48,7 @@ export function AssetStore() {
   const [reportReason, setReportReason] = useState<ReportReason>("copyright");
   const [reportDetails, setReportDetails] = useState("");
   const [busy, setBusy] = useState(false);
+  const [importBusyId, setImportBusyId] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -92,6 +93,17 @@ export function AssetStore() {
     finally { setBusy(false); }
   }
 
+  async function importAsset(assetId: string) {
+    setImportBusyId(assetId); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/asset-store/${encodeURIComponent(assetId)}/import`, { method: "POST" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message || "The asset could not be added to your private library.");
+      setNotice(body.notice || "A private copy was added to your library. Follow the asset’s license and attribution.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "The asset could not be added to your private library."); }
+    finally { setImportBusyId(""); }
+  }
+
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAppliedQuery(query.slice(0, 80));
@@ -117,13 +129,13 @@ export function AssetStore() {
         <p className="asset-store-description">{asset.description || "No additional description provided."}</p>
         <div className="asset-store-credit"><small>Attribution</small><strong>{asset.attribution}</strong><span>Uploaded by <Link href={`/developers/${encodeURIComponent(asset.creator.username)}`}>{asset.creator.displayName}</Link></span></div>
         <div className="asset-store-license"><small>License</small><a href={asset.license.url} target="_blank" rel="noopener noreferrer">{asset.license.name} ↗</a><span>Review the license before using, adapting, or redistributing this asset.</span></div>
-        <div className="asset-store-card-actions"><a className="button button-primary button-small" href={asset.downloadUrl}><Download size={13} /> Download under license</a>{user ? <button className="button button-outline button-small" onClick={() => { setReportId((current) => current === asset.id ? "" : asset.id); setReportDetails(""); }}>Report</button> : <Link className="button button-outline button-small" href="/auth?mode=login">Sign in to report</Link>}</div>
+        <div className="asset-store-card-actions"><a className="button button-primary button-small" href={asset.downloadUrl}><Download size={13} /> Download under license</a>{user ? <><button className="button button-outline button-small" onClick={() => void importAsset(asset.id)} disabled={importBusyId === asset.id}>{importBusyId === asset.id ? "Adding private copy…" : "Save to my assets"}</button><button className="button button-outline button-small" onClick={() => { setReportId((current) => current === asset.id ? "" : asset.id); setReportDetails(""); }}>Report</button></> : <Link className="button button-outline button-small" href="/auth?mode=login&next=%2Fasset-store">Sign in to save or report</Link>}</div>
         {user && reportId === asset.id && <form className="asset-store-report-form" onSubmit={(event) => void reportAsset(event, asset.id)}>
           <label className="field"><span>Report reason</span><select className="select-input" value={reportReason} onChange={(event) => setReportReason(event.target.value as ReportReason)}><option value="copyright">Copyright or ownership concern</option><option value="unsafe">Unsafe or prohibited content</option><option value="spam">Spam or misleading listing</option><option value="other">Other</option></select></label>
           <label className="field"><span>Details (optional)</span><textarea className="text-area" value={reportDetails} onChange={(event) => setReportDetails(event.target.value)} maxLength={1000} /></label>
           <button className="button button-danger button-small" disabled={busy}>{busy ? "Sending…" : "Send report"}</button>
         </form>}
       </article>)}</section> : <div className="empty-state-card"><strong>{appliedQuery || category !== "all" ? "No assets match these filters" : "No assets are public yet"}</strong><p>Uploads remain private until their owners authorize public downloads and a moderator approves the listing. Check back later, or submit your own rights-cleared assets from the Asset Studio.</p><Link className="button button-dark button-small" href="/assets">Open Asset Studio</Link></div>}
-    <p className="asset-store-scope-note">Rights declarations are self-attested; moderation is not a legal guarantee or independent ownership verification. If you identify an unauthorized or infringing listing, report it for review. Public access can be removed, but previously downloaded copies cannot be recalled.</p>
+    <p className="asset-store-scope-note">Rights declarations are self-attested; moderation is not a legal guarantee or independent ownership verification. If you identify an unauthorized or infringing listing, report it for review. Public access can be removed, but previously downloaded copies cannot be recalled. <Link href="/asset-store/policy">Read the review policy.</Link></p>
   </main>;
 }

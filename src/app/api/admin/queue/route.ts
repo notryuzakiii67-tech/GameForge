@@ -37,6 +37,18 @@ export async function GET() {
        FROM assets a JOIN users u ON u.id = a.owner_id
        WHERE a.publication_status = 'pending_review' AND a.upload_status = 'ready' AND a.deleted_at IS NULL
        ORDER BY COALESCE(a.rights_declaration_at, a.updated_at) ASC LIMIT 100`);
+    const appeals = await query<{
+      id: string; asset_id: string; explanation: string; created_at: string; publication_status: string;
+      title: string; filename: string; username: string; display_name: string;
+    }>(
+      `SELECT appeal.id, appeal.asset_id, appeal.explanation, appeal.created_at, a.publication_status,
+              COALESCE(NULLIF(a.store_title, ''), a.original_name) AS title, a.original_name AS filename,
+              u.username, u.display_name
+       FROM asset_store_appeals appeal
+       JOIN assets a ON a.id = appeal.asset_id
+       JOIN users u ON u.id = appeal.owner_id
+       WHERE appeal.status = 'open' AND a.deleted_at IS NULL
+       ORDER BY appeal.created_at ASC LIMIT 100`);
     const suspendedUsers = actor.role === "admin"
       ? await query<{ id: string; username: string; display_name: string; role: string; updated_at: string }>(
         `SELECT id, username, display_name, role, updated_at FROM users WHERE account_status = 'suspended' ORDER BY updated_at DESC LIMIT 100`)
@@ -76,6 +88,11 @@ export async function GET() {
         rightsConfirmed: asset.rights_confirmed === 1, downloadAuthorized: asset.download_authorized === 1,
         attribution: asset.attribution, submittedAt: asset.submitted_at ?? "", validationState: asset.validation_state,
         contentHash: asset.content_hash, creator: { displayName: asset.display_name, username: asset.username },
+      })),
+      appeals: appeals.map((appeal) => ({
+        id: appeal.id, assetId: appeal.asset_id, explanation: appeal.explanation, createdAt: appeal.created_at,
+        publicationStatus: appeal.publication_status, title: appeal.title, filename: appeal.filename,
+        creator: { displayName: appeal.display_name, username: appeal.username },
       })),
       suspendedUsers: suspendedUsers.map((account) => ({ id: account.id, username: account.username, displayName: account.display_name, role: account.role, suspendedAt: account.updated_at })),
       reports: reports.map((report) => ({

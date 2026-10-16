@@ -92,7 +92,7 @@ async function createProject(ownerId: string, content = "<!doctype html><html><b
   return { id, files };
 }
 
-async function createAsset(ownerId: string, filename = "private sprite.png") {
+async function createAsset(ownerId: string, filename = "private sprite.png", source?: { assetId: string; license?: string; licenseUrl?: string; attribution?: string; creatorUsername?: string; creatorDisplayName?: string }) {
   const id = newId();
   const timestamp = nowIso();
   const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
@@ -104,6 +104,10 @@ async function createAsset(ownerId: string, filename = "private sprite.png") {
        upload_status, publication_status, validation_state, validation_json, created_at, updated_at)
      VALUES (?, ?, ?, 'png', 'PNG', 'image', 'image/png', ?, ?, ?, 'ready', 'private', 'valid_compatible', '{}', ?, ?)`,
     [id, ownerId, filename, bytes.byteLength, hash, storageKey, timestamp, timestamp],
+  );
+  if (source) await execute(
+    `UPDATE assets SET source_asset_id = ?, source_license = ?, source_license_url = ?, source_attribution = ?, source_creator_username = ?, source_creator_display_name = ? WHERE id = ?`,
+    [source.assetId, source.license ?? "cc-by-4.0", source.licenseUrl ?? "https://creativecommons.org/licenses/by/4.0/", source.attribution ?? "Original asset creator", source.creatorUsername ?? "source_creator", source.creatorDisplayName ?? "Source Creator", id],
   );
   return { id, bytes, storageKey, hash, filename };
 }
@@ -235,10 +239,15 @@ describe("versioned private project asset bindings", () => {
   it("exports bound assets as private ZIP entries and rewrites placeholders to relative paths", async () => {
     const owner = await createUser("binding_export_owner");
     authState.userId = owner;
-    const asset = await createAsset(owner, "Moon Garden.png");
+    const source = await createAsset(owner, "original-store-asset.png");
+    const asset = await createAsset(owner, "Moon Garden.png", {
+      assetId: source.id, license: "cc-by-sa-4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
+      attribution: "Art by Garden Studio", creatorUsername: "garden_creator", creatorDisplayName: "Garden Studio",
+    });
     const project = await createProject(owner, `<!doctype html><html><body><img src="gameforge-asset://${asset.id}"></body></html>`);
     const bound = await bindAssets(request(`/api/ai/projects/${project.id}/assets`, "POST", { version: 1, assetIds: [asset.id] }), { params: Promise.resolve({ id: project.id }) });
     expect(bound.status).toBe(200);
+    expect(await bodyJson(bound)).toMatchObject({ bindings: [{ importSource: { license: "cc-by-sa-4.0", attribution: "Art by Garden Studio" } }] });
 
     const response = await exportProject(new Request(`http://localhost:3000/api/ai/projects/${project.id}/export`), { params: Promise.resolve({ id: project.id }) });
     expect(response.status).toBe(200);
@@ -251,5 +260,9 @@ describe("versioned private project asset bindings", () => {
     expect(html).not.toContain("gameforge-asset://");
     expect(html).not.toContain(asset.storageKey);
     expect(zip[archiveAssetPath]).toEqual(asset.bytes);
+    const licenseNotice = new TextDecoder().decode(zip["GAMEFORGE_ASSET_LICENSES.txt"]);
+    expect(licenseNotice).toContain("Art by Garden Studio");
+    expect(licenseNotice).toContain("cc-by-sa-4.0");
+    expect(licenseNotice).toContain("ShareAlike obligations");
   });
 });

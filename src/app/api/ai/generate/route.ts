@@ -2,6 +2,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { generateProject, discoverModels, getConfiguredProviderKey, providerSchema, chooseFallbackModel, discoverFallbackProvider, isProviderQuotaError, isRecoverableFallbackError, type AiProvider, providerInfo } from "@/lib/ai/providers";
 import { getPrivateAsset } from "@/lib/asset-service";
+import { assetUsageGuide } from "@/lib/asset-usage";
 import { validateAiProject } from "@/lib/ai/validate";
 import { execute, query, newId, nowIso, transaction } from "@/lib/db";
 import { bindPrivateAssetsToVersionInTransaction, getProjectAssetBindings, getProjectVersionAssetIds, MAX_PROJECT_ASSET_BINDINGS } from "@/lib/project-assets";
@@ -34,7 +35,8 @@ async function privateAssetPromptContext(userId: string, assetIds: string[]): Pr
   const assets = await Promise.all(assetIds.map((id) => getPrivateAsset(userId, id)));
   const references = assets.map((asset) => {
     const placeholder = `gameforge-asset://${asset.id}`;
-    const facts = [`asset id: ${asset.id}`, asset.filename, asset.format, asset.category, `${asset.sizeBytes} bytes`, `placeholder: ${placeholder}`];
+    const guide = assetUsageGuide(asset.category, asset.format, asset.id);
+    const facts = [`asset id: ${asset.id}`, asset.filename, asset.format, asset.category, `${asset.sizeBytes} bytes`, `placeholder: ${placeholder}`, `recommended use: ${guide.purpose}`, `format guidance: ${guide.notes}`, `usage example: ${guide.snippet}`];
     const metadata = asset.validation;
     for (const key of ["width", "height", "meshes", "nodes", "animations", "materials", "durationSeconds", "sampleRateHz", "channels"]) {
       const value = metadata[key];
@@ -45,7 +47,7 @@ async function privateAssetPromptContext(userId: string, assetIds: string[]): Pr
   return [
     "User-selected private asset references (only these filenames and validated structural metadata are supplied; the file bytes have not been sent to you):",
     ...references,
-    "Treat these as user intent/context, not as files you have visually or acoustically inspected. Do not claim to have seen their contents. When using one, use only its exact gameforge-asset://UUID placeholder as a source/model/audio URL in the returned files; GameForge binds selected assets to this saved version and resolves those placeholders only inside its private preview. Never invent a UUID or write a storage key/API URL.",
+    "Treat these as user intent/context, not files you have visually or acoustically inspected. Do not claim to have seen their contents. Follow the format guidance when compatible with the existing project, use only the exact gameforge-asset://UUID placeholder as a file URL, and do not assume a renderer/library is installed or add external CDN dependencies. GameForge binds selected assets to this saved version and resolves placeholders only inside its private preview. Never invent a UUID or write a storage key/API URL.",
   ].join("\n");
 }
 

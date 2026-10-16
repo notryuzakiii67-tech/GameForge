@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertCircle, ArrowDownToLine, ArrowLeft, AudioLines, Check, FileBox, Image as ImageIcon, LoaderCircle,
+  AlertCircle, ArrowDownToLine, ArrowLeft, AudioLines, Check, Copy, FileBox, Image as ImageIcon, LoaderCircle,
   LockKeyhole, Plus, Trash2, Upload, WandSparkles,
 } from "lucide-react";
 import type { PublicUser } from "@/lib/auth";
 import { AssetPreview } from "@/components/AssetPreview";
+import { assetUsageGuide } from "@/lib/asset-usage";
 
 type Asset = {
   id: string;
@@ -32,6 +33,8 @@ type Asset = {
   attribution: string;
   moderationNote: string;
   publishedAt: string | null;
+  importSource: { assetId: string | null; license: string; licenseUrl: string; attribution: string; creatorUsername: string; creatorDisplayName: string } | null;
+  appeal: { status: string; explanation: string; reviewerNote: string; createdAt: string } | null;
 };
 type ApiErrorBody = { error?: { message?: string; code?: string } };
 type CategoryFilter = "all" | Asset["category"];
@@ -91,6 +94,9 @@ export function AssetStudio() {
   const [rightsBasis, setRightsBasis] = useState<"created_by_me" | "licensed_for_redistribution" | "public_domain">("created_by_me");
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [downloadAuthorized, setDownloadAuthorized] = useState(false);
+  const [appealExplanation, setAppealExplanation] = useState("");
+  const [appealBusy, setAppealBusy] = useState(false);
+  const [snippetCopied, setSnippetCopied] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -117,6 +123,8 @@ export function AssetStudio() {
     setRightsConfirmed(false);
     setDownloadAuthorized(false);
     setStoreFormOpen(false);
+    setAppealExplanation("");
+    setSnippetCopied(false);
   }, [selectedId, user?.id]);
 
   async function refreshAssets() {
@@ -176,6 +184,16 @@ export function AssetStudio() {
     if (file) void upload(file);
   }
 
+  async function copyUsageExample() {
+    if (!selected) return;
+    const snippet = assetUsageGuide(selected.category, selected.format, selected.id).snippet;
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setSnippetCopied(true);
+      window.setTimeout(() => setSnippetCopied(false), 1_800);
+    } catch { setError("Clipboard access was unavailable. You can select and copy the example shown below."); }
+  }
+
   async function deleteSelected() {
     if (!selected || !window.confirm(`Permanently delete “${selected.filename}” from your library?`)) return;
     setError("");
@@ -210,6 +228,24 @@ export function AssetStudio() {
     finally { setStoreBusy(false); }
   }
 
+  async function submitAppeal(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected) return;
+    setError(""); setNotice(""); setAppealBusy(true);
+    try {
+      const response = await fetch(`/api/assets/${encodeURIComponent(selected.id)}/appeal`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ explanation: appealExplanation }),
+      });
+      if (!response.ok) throw new Error(await responseError(response));
+      const result = await response.json() as { message?: string };
+      setAppealExplanation("");
+      setNotice(result.message || "Your appeal is in the moderator queue. The asset stays private while reviewed.");
+      await refreshAssets();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "The appeal could not be submitted."); }
+    finally { setAppealBusy(false); }
+  }
+
   async function withdrawFromStore() {
     if (!selected || !window.confirm("Withdraw this asset from the public store? Copies already downloaded remain subject to the selected license.")) return;
     setError(""); setNotice(""); setStoreBusy(true);
@@ -233,9 +269,10 @@ export function AssetStudio() {
   const modelCounts = selected?.category === "model"
     ? ["meshes", "nodes", "animations", "materials"].filter((key) => typeof details[key] === "number").map((key) => `${details[key]} ${key}`)
     : [];
-  const canDeleteSelected = Boolean(selected && ["private", "rejected", "removed"].includes(selected.publicationStatus));
+  const canDeleteSelected = Boolean(selected && ["private", "rejected", "removed"].includes(selected.publicationStatus) && selected.appeal?.status !== "open");
   const canWithdrawSelected = Boolean(selected && ["pending_review", "published"].includes(selected.publicationStatus));
-  const canSubmitSelected = Boolean(selected && ["private", "rejected"].includes(selected.publicationStatus));
+  const canSubmitSelected = Boolean(selected && !selected.importSource && ["private", "rejected"].includes(selected.publicationStatus) && selected.appeal?.status !== "open");
+  const selectedUsageGuide = selected ? assetUsageGuide(selected.category, selected.format, selected.id) : null;
 
   return <main className="page-wrap page-content asset-studio-page">
     <div className="studio-topbar asset-studio-topbar">
@@ -263,20 +300,31 @@ export function AssetStudio() {
 
       <section className="asset-detail-panel panel-card" aria-label="Selected asset details">
         {selected ? <>
-          <div className="asset-detail-heading"><div><div className="eyebrow">{selected.category.toUpperCase()} · {selected.publicationStatus.replaceAll("_", " ").toUpperCase()}</div><h2 title={selected.filename}>{selected.filename}</h2><span>{selected.format} · {formatBytes(selected.sizeBytes)} · Uploaded {new Date(selected.createdAt).toLocaleString()}</span></div><div className="asset-detail-actions"><a className="button button-dark button-small" href={selected.previewUrl} download={selected.filename}><ArrowDownToLine size={12} /> Download</a>{canWithdrawSelected && <button className="button button-outline button-small" onClick={withdrawFromStore} disabled={storeBusy}>Withdraw from store</button>}{canDeleteSelected && <button className="button button-outline button-small asset-delete-button" onClick={deleteSelected} disabled={deleting}><Trash2 size={13} /> {deleting ? "Deleting…" : "Delete"}</button>}</div></div>
+          <div className="asset-detail-heading"><div><div className="eyebrow">{selected.category.toUpperCase()} · {selected.publicationStatus.replaceAll("_", " ").toUpperCase()}</div><h2 title={selected.filename}>{selected.filename}</h2><span>{selected.format} · {formatBytes(selected.sizeBytes)} · Uploaded {new Date(selected.createdAt).toLocaleString()}</span></div><div className="asset-detail-actions"><a className="button button-dark button-small" href={selected.previewUrl} download={selected.filename}><ArrowDownToLine size={12} /> Download</a><button className="button button-outline button-small" onClick={() => void copyUsageExample()}><Copy size={12} /> {snippetCopied ? "Copied" : "Copy usage"}</button>{canWithdrawSelected && <button className="button button-outline button-small" onClick={withdrawFromStore} disabled={storeBusy}>Withdraw from store</button>}{canDeleteSelected && <button className="button button-outline button-small asset-delete-button" onClick={deleteSelected} disabled={deleting}><Trash2 size={13} /> {deleting ? "Deleting…" : "Delete"}</button>}</div></div>
           <div className="asset-preview-shell">
             {selected.category === "image" && <img className="asset-image-preview" src={selected.previewUrl} alt={`Private preview of ${selected.filename}`} />}
             {selected.category === "model" && <AssetPreview key={selected.id} url={selected.previewUrl} label={selected.filename} />}
             {selected.category === "audio" && <div className="asset-audio-preview"><AudioLines size={35} /><strong>{selected.filename}</strong><span>{duration ? `${duration.toFixed(2)} seconds · ` : ""}{formatBytes(selected.sizeBytes)}</span><audio src={selected.previewUrl} controls preload="metadata">Your browser does not support the audio preview.</audio></div>}
           </div>
           <div className="asset-metadata-grid"><div><small>File format</small><strong>{selected.format}</strong></div><div><small>Category</small><strong>{selected.category}</strong></div><div><small>Validated size</small><strong>{formatBytes(selected.sizeBytes)}</strong></div>{width && height && <div><small>Dimensions</small><strong>{width} × {height} px</strong></div>}{modelCounts.length > 0 && <div><small>Model structure</small><strong>{modelCounts.join(" · ")}</strong></div>}{duration && <div><small>Duration</small><strong>{duration.toFixed(2)} s</strong></div>}<div><small>Content validation</small><strong className="asset-valid-state"><Check size={12} /> {selected.validationState.replaceAll("_", " ")}</strong></div></div>
+          {selectedUsageGuide && <div className="asset-usage-card"><div><strong>Format-aware usage</strong><span>{selectedUsageGuide.purpose} · {selectedUsageGuide.notes}</span></div><pre>{selectedUsageGuide.snippet}</pre><small>GameForge resolves this private placeholder only in a version that binds the asset. Model rendering still needs a compatible loader already included with the game.</small></div>}
           <div className="asset-privacy-note"><LockKeyhole size={14} /><div><strong>{selected.publicationStatus === "published" ? "Publicly downloadable under its license" : selected.publicationStatus === "pending_review" ? "Private while awaiting moderator review" : selected.publicationStatus === "removed" ? "Removed from public access" : "Private, not published"}</strong><span>{selected.publicationStatus === "published" ? `This file can be downloaded by anyone under ${selected.license ?? "its declared license"}. Existing copies remain subject to that license if you withdraw it.` : "Your file stays private unless you submit it and a moderator approves it. Private file bytes are not sent to AI; only filenames and validated metadata you explicitly attach as prompt context may be shared."}</span></div></div>
+          {selected.importSource && <div className="asset-import-provenance"><strong>Imported from the public Asset Store</strong><span>Original creator: {selected.importSource.creatorDisplayName} (@{selected.importSource.creatorUsername})</span><span>Attribution to preserve: {selected.importSource.attribution}</span><span>License: <a href={selected.importSource.licenseUrl} target="_blank" rel="noopener noreferrer">{selected.importSource.license} ↗</a></span>{selected.importSource.assetId && <Link href={`/asset-store#asset-${encodeURIComponent(selected.importSource.assetId)}`}>View source listing</Link>}</div>}
+          {selected.appeal && <div className="notice notice-info asset-moderation-note"><strong>Appeal {selected.appeal.status.replaceAll("_", " ")}:</strong> {selected.appeal.explanation}{selected.appeal.reviewerNote && <><br /><strong>Moderator response:</strong> {selected.appeal.reviewerNote}</>}</div>}
           {selected.moderationNote && <div className="notice notice-info asset-moderation-note"><strong>Moderator note:</strong> {selected.moderationNote}</div>}
           <section className="asset-store-submission panel-card" aria-label="Public Asset Store submission">
             <div className="asset-store-submission-head"><div><div className="eyebrow">COMMUNITY ASSET STORE</div><h3>Publish with permission</h3><p>Every listing requires a rights declaration, attribution, a public license, explicit download authorization, and moderator approval.</p></div>{selected.publicationStatus === "published" && <Link href="/asset-store" className="button button-dark button-small">View listing</Link>}</div>
+            {selected.importSource && <p className="asset-store-status-copy">This is a private copy of another creator’s Asset Store file. Its original license and attribution are retained; this imported copy cannot be re-listed. Use the source creator’s listing when appropriate.</p>}
             {selected.publicationStatus === "pending_review" && <p className="asset-store-status-copy">In the review queue. The listing and download are not public yet.</p>}
             {selected.publicationStatus === "published" && <p className="asset-store-status-copy">Published {selected.publishedAt ? new Date(selected.publishedAt).toLocaleString() : ""}. Withdraw anytime; previously downloaded copies remain subject to the license.</p>}
-            {selected.publicationStatus === "removed" && <p className="asset-store-status-copy">This asset was removed from public access. Contact the moderation team if you believe this was in error.</p>}
+            {selected.publicationStatus === "removed" && <p className="asset-store-status-copy">This asset was removed from public access. It remains private in your library; appeal below if you believe the decision should be reconsidered.</p>}
+            {selected.publicationStatus === "rejected" && <p className="asset-store-status-copy">This submission was rejected and remains private. Review the moderator note above, then appeal or update and resubmit.</p>}
+            {["rejected", "removed"].includes(selected.publicationStatus) && selected.appeal?.status === "open" && <p className="asset-store-status-copy">Your appeal is waiting for a moderator. The asset remains private during appeal review.</p>}
+            {["rejected", "removed"].includes(selected.publicationStatus) && selected.appeal?.status !== "open" && <form className="asset-store-rights-form" onSubmit={submitAppeal}>
+              <div className="field"><label htmlFor="asset-appeal-explanation">Appeal this decision</label><textarea id="asset-appeal-explanation" className="text-area" value={appealExplanation} onChange={(event) => setAppealExplanation(event.target.value)} minLength={20} maxLength={2000} rows={4} required placeholder="Explain what the reviewer may have missed or what new information should be considered (20–2,000 characters)." /></div>
+              <p className="asset-rights-disclaimer">An appeal requests a second moderation review; it does not restore public access. If accepted, the asset returns to the standard review queue and must still be approved before it can be downloaded.</p>
+              <button className="button button-primary button-small" disabled={appealBusy}>{appealBusy ? "Submitting appeal…" : "Submit appeal"}</button>
+            </form>}
             {canSubmitSelected && !storeFormOpen && <button className="button button-primary button-small" onClick={() => { setRightsConfirmed(false); setDownloadAuthorized(false); setStoreFormOpen(true); }}>Submit for public review</button>}
             {canSubmitSelected && storeFormOpen && <form className="asset-store-rights-form" onSubmit={submitToStore}>
               <div className="field"><label htmlFor="store-asset-title">Store title</label><input id="store-asset-title" className="text-input" value={storeTitle} onChange={(event) => setStoreTitle(event.target.value)} maxLength={100} minLength={2} required /></div>

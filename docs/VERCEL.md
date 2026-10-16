@@ -38,7 +38,7 @@ Create a private bucket/container and a dedicated service credential. Block publ
 
 Private Asset Studio uploads use a five-minute presigned POST policy to an owner-scoped `assets/pending/` key. The policy fixes the staging key, private cache metadata, binary content type, and exact client-declared object size; the completion route independently checks actual size, validates content, and promotes the verified bytes to a separate `assets/private/` key. Replaying a still-valid POST can never overwrite an already validated preview. Configure bucket CORS to allow `POST` from the exact `NEXT_PUBLIC_SITE_URL` origin (and explicitly listed preview origins only). Do not use `*` in production. The upload is a browser `multipart/form-data` request with signed fields; do not require exposing the bucket for GET/preview. GameForge streams private asset previews through authenticated `/api/assets/{id}/file` responses with `private, no-store` caching, and game files through `/api/builds/...`; do not return direct public bucket URLs or make the bucket public.
 
-The implementation does not currently configure lifecycle cleanup, a scheduled orphan-object sweeper, a production malware scanner, or an isolated media-conversion service. Expired pending asset rows are cleaned when the same user starts another upload; this is not a substitute for a scheduled storage lifecycle policy.
+`vercel.json` schedules `/api/cron/assets/cleanup` hourly. The route removes expired pending upload/import rows, retries failed cleanup of deleted/tombstoned asset objects with leases and exponential backoff, and retries leftover staging objects for ready private assets. It requires a server-only `CRON_SECRET` of at least 32 characters. Vercel's cron runner supplies `Authorization: Bearer $CRON_SECRET` when that environment variable is configured. Verify the cron invocation and logs after deployment; this local workspace has not run a Vercel cron. The job only reconciles keys retained on asset rows; unknown bucket orphans still need a reviewed inventory/lifecycle policy. No production malware scanner or isolated media-conversion service is configured.
 
 ## 4. Add the content origin
 
@@ -65,7 +65,7 @@ S3_ACCESS_KEY_ID=…
 S3_SECRET_ACCESS_KEY=…
 ```
 
-For a non-AWS endpoint, also set `S3_ENDPOINT`. Set optional resource limits only after checking your database, Vercel function, and storage quotas. See the complete list and defaults in [local setup](SETUP.md#environment-variables) and `.env.example`.
+For a non-AWS endpoint, also set `S3_ENDPOINT`. Set optional resource limits only after checking your database, Vercel function, and storage quotas. See the complete list and defaults in [local setup](SETUP.md#environment-variables) and `.env.example`. From a trusted environment with the intended production variables injected, `npm run config:check` validates required value shapes without printing credentials; it does not connect to or verify any provider, bucket, cron, or domain.
 
 - Mark database/storage values as sensitive in Vercel and never prefix secrets with `NEXT_PUBLIC_`.
 - Set `NEXT_PUBLIC_SITE_URL` per deployment environment. It is used to validate mutation origins; a production value will reject requests sent from a different preview hostname.

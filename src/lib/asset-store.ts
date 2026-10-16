@@ -44,6 +44,8 @@ type AssetStoreRow = {
   rights_basis: string | null;
   download_authorized: number;
   rights_declaration_at: string | null;
+  source_asset_id?: string | null;
+  source_license?: string | null;
   attribution: string;
   created_at: string;
   published_at: string | null;
@@ -68,7 +70,7 @@ export type PublicAssetStoreItem = {
 
 const selectStoreColumns = `id, owner_id, original_name, format, category, mime_type, size_bytes, content_hash, storage_key,
   upload_status, publication_status, validation_state, store_title, public_description, license, rights_confirmed,
-  rights_basis, download_authorized, rights_declaration_at, attribution, created_at, published_at`;
+  rights_basis, download_authorized, rights_declaration_at, source_asset_id, source_license, attribution, created_at, published_at`;
 const publicStoreSelectColumns = `a.id, a.owner_id, a.original_name, a.format, a.category, a.mime_type, a.size_bytes,
   a.content_hash, a.storage_key, a.upload_status, a.publication_status, a.validation_state, a.store_title,
   a.public_description, a.license, a.rights_confirmed, a.rights_basis, a.download_authorized, a.rights_declaration_at, a.attribution,
@@ -131,12 +133,15 @@ export async function submitAssetToStore(ownerId: string, assetId: string, decla
   await transaction(async (tx) => {
     if (tx.dialect === "postgres") await tx.query(`SELECT id FROM assets WHERE id = ? AND owner_id = ? FOR UPDATE`, [assetId, ownerId]);
     const asset = await ownedAsset(tx, ownerId, assetId);
+    if (asset.source_asset_id || asset.source_license) throw new ApiError(409, "IMPORTED_ASSET_NOT_RESUBMITTABLE", "Imported Asset Store copies retain their original license and cannot be re-listed from this copy. Use the source creator's public listing when appropriate.");
     if (asset.upload_status !== "ready" || asset.validation_state !== "valid_compatible") {
       throw new ApiError(409, "ASSET_NOT_VALIDATED", "Only a fully validated asset can be submitted for public review.");
     }
     if (!(asset.publication_status === "private" || asset.publication_status === "rejected")) {
       throw new ApiError(409, "ASSET_SUBMISSION_STATE", "Only a private or previously rejected asset can be submitted for review.");
     }
+    const openAppeal = await tx.query<{ id: string }>(`SELECT id FROM asset_store_appeals WHERE asset_id = ? AND status = 'open' LIMIT 1`, [assetId]);
+    if (openAppeal[0]) throw new ApiError(409, "ASSET_APPEAL_OPEN", "Resolve the open appeal before submitting this asset again.");
     await tx.execute(
       `UPDATE assets SET store_title = ?, public_description = ?, license = ?, attribution = ?, rights_basis = ?,
          rights_confirmed = 1, download_authorized = 1, rights_declaration_at = ?, publication_status = 'pending_review',
@@ -287,4 +292,70 @@ export async function getPublicStoreAsset(assetId: string): Promise<AssetStoreRo
   const asset = rows[0];
   if (!asset || !isLicense(asset.license)) throw new ApiError(404, "ASSET_NOT_FOUND", "That public asset is not available.");
   return asset;
+}
+
+export async function submitAssetStoreAppeal(ownerId: string, assetId: string, explanation: string): Promise<{ appealId: string; status: "open" }> {
+  const reason = explanation.trim();
+  if (reason.length < 20 || reason.length > 2_000) throw new ApiError(400, "INVALID_APPEAL", "Explain why the moderation decision should be reconsidered (20 to 2,000 characters).");
+  const appealId = newId();
+  const timestamp = nowIso();
+  await transaction(async (tx) => {
+    if (tx.dialect === "postgres") await tx.query(`SELECT id FROM assets WHERE id = ? AND owner_id = ? FOR UPDATE`, [assetId, ownerId]);
+    const rows = await tx.query<{ publication_status: string }>(
+      `SELECT publication_status FROM assets WHERE id = ? AND owner_id = ? AND deleted_at IS NULL LIMIT 1`, [assetId, ownerId]);
+    const asset = rows[0];
+    if (!asset) throw new ApiError(404, "ASSET_NOT_FOUND", "That asset is not in your account.");
+    if (asset.publication_status !== "rejected" && asset.publication_status !== "removed") {
+      throw new ApiError(409, "ASSET_NOT_APPEALABLE", "Only rejected or removed Asset Store submissions can be appealed.");
+    }
+    const open = await tx.query<{ id: string }>(`SELECT id FROM asset_store_appeals WHERE asset_id = ? AND status = 'open' LIMIT 1`, [assetId]);
+    if (open[0]) throw new ApiError(409, "APPEAL_ALREADY_OPEN", "This asset already has an appeal awaiting moderator review.");
+    await tx.execute(
+      `INSERT INTO asset_store_appeals(id, asset_id, owner_id, explanation, status, created_at)
+       VALUES (?, ?, ?, ?, 'open', ?)`, [appealId, assetId, ownerId, reason, timestamp]);
+  });
+  await logAudit(ownerId, "asset.store.appeal", "asset", assetId, { appealId });
+  return { appealId, status: "open" };
+}
+
+export async function reviewAssetStoreAppeal(
+  appealId: string,
+  actorId: string,
+  decision: "reopen" | "uphold",
+  note: string,
+): Promise<{ status: "reopened" | "upheld"; assetId: string }> {
+  const reviewerNote = note.trim();
+  if (reviewerNote.length < 3 || reviewerNote.length > 500) throw new ApiError(400, "MODERATION_NOTE_REQUIRED", "Provide a moderation note between 3 and 500 characters.");
+  const timestamp = nowIso();
+  let assetId = "";
+  await transaction(async (tx) => {
+    if (tx.dialect === "postgres") await tx.query(`SELECT id FROM asset_store_appeals WHERE id = ? FOR UPDATE`, [appealId]);
+    const rows = await tx.query<{ id: string; asset_id: string; status: string }>(
+      `SELECT id, asset_id, status FROM asset_store_appeals WHERE id = ? LIMIT 1`, [appealId]);
+    const appeal = rows[0];
+    if (!appeal || appeal.status !== "open") throw new ApiError(404, "APPEAL_NOT_OPEN", "This asset appeal is already resolved or unavailable.");
+    assetId = appeal.asset_id;
+    if (tx.dialect === "postgres") await tx.query(`SELECT id FROM assets WHERE id = ? FOR UPDATE`, [assetId]);
+    const assets = await tx.query<{ publication_status: string }>(`SELECT publication_status FROM assets WHERE id = ? AND deleted_at IS NULL LIMIT 1`, [assetId]);
+    const asset = assets[0];
+    if (!asset || (asset.publication_status !== "rejected" && asset.publication_status !== "removed")) {
+      throw new ApiError(409, "ASSET_APPEAL_STATE_CHANGED", "The asset changed while its appeal was being reviewed.");
+    }
+    const appealStatus = decision === "reopen" ? "reopened" : "upheld";
+    const updated = await tx.execute(
+      `UPDATE asset_store_appeals SET status = ?, reviewed_at = ?, reviewer_id = ?, reviewer_note = ? WHERE id = ? AND status = 'open'`,
+      [appealStatus, timestamp, actorId, reviewerNote, appealId],
+    );
+    if (!updated) throw new ApiError(409, "APPEAL_ALREADY_REVIEWED", "Another moderator resolved this appeal first.");
+    if (decision === "reopen") {
+      const changed = await tx.execute(
+        `UPDATE assets SET publication_status = 'pending_review', published_at = NULL, reviewed_at = ?, reviewer_id = ?, moderation_note = ?, updated_at = ?
+         WHERE id = ? AND publication_status IN ('rejected', 'removed') AND deleted_at IS NULL`,
+        [timestamp, actorId, reviewerNote, timestamp, assetId],
+      );
+      if (!changed) throw new ApiError(409, "ASSET_APPEAL_STATE_CHANGED", "The asset changed while its appeal was being reviewed.");
+    }
+  });
+  await logAudit(actorId, `asset.store.appeal.${decision}`, "asset", assetId, { appealId, note: reviewerNote });
+  return { status: decision === "reopen" ? "reopened" : "upheld", assetId };
 }

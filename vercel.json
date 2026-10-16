@@ -6,6 +6,10 @@
   "functions": {
     "src/app/api/ai/generate/route.ts": { "maxDuration": 60 },
     "src/app/api/games/*/upload/route.ts": { "maxDuration": 30 },
-    "src/app/api/ai/projects/*/publish/route.ts": { "maxDuration": 30 }
-  }
+    "src/app/api/ai/projects/*/publish/route.ts": { "maxDuration": 30 },
+    "src/app/api/cron/assets/cleanup/route.ts": { "maxDuration": 30 }
+  },
+  "crons": [
+    { "path": "/api/cron/assets/cleanup", "schedule": "17 * * * *" }
+  ]
 }

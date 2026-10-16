@@ -20,6 +20,12 @@ type BindingRow = {
   content_hash: string;
   storage_key: string;
   created_at: string;
+  source_asset_id: string | null;
+  source_license: string | null;
+  source_license_url: string | null;
+  source_attribution: string;
+  source_creator_username: string | null;
+  source_creator_display_name: string | null;
 };
 
 export type ProjectAssetBinding = {
@@ -30,6 +36,7 @@ export type ProjectAssetBinding = {
   sizeBytes: number;
   placeholder: string;
   createdAt: string;
+  importSource: { assetId: string | null; license: string; licenseUrl: string; attribution: string; creatorUsername: string; creatorDisplayName: string } | null;
 };
 
 export type BoundProjectAssetRecord = ProjectAssetBinding & {
@@ -50,6 +57,14 @@ function toSummary(row: BindingRow): BoundProjectAssetRecord {
     mimeType: row.mime_type,
     contentHash: row.content_hash,
     storageKey: row.storage_key,
+    importSource: row.source_license && row.source_license_url ? {
+      assetId: row.source_asset_id,
+      license: row.source_license,
+      licenseUrl: row.source_license_url,
+      attribution: row.source_attribution,
+      creatorUsername: row.source_creator_username ?? "creator",
+      creatorDisplayName: row.source_creator_display_name ?? "Original creator",
+    } : null,
   };
 }
 
@@ -62,6 +77,7 @@ function publicSummary(row: BoundProjectAssetRecord): ProjectAssetBinding {
     sizeBytes: row.sizeBytes,
     placeholder: row.placeholder,
     createdAt: row.createdAt,
+    importSource: row.importSource,
   };
 }
 
@@ -179,7 +195,7 @@ export async function getProjectAssetBindings(
   }
   if (!Number.isInteger(version) || version < 1) return { version: 0, bindings: [] };
   const rows = await query<BindingRow>(
-    `SELECT b.asset_id, a.original_name, a.format, a.category, a.mime_type, a.size_bytes, a.content_hash, a.storage_key, b.created_at
+    `SELECT b.asset_id, a.original_name, a.format, a.category, a.mime_type, a.size_bytes, a.content_hash, a.storage_key, b.created_at, a.source_asset_id, a.source_license, a.source_license_url, a.source_attribution, a.source_creator_username, a.source_creator_display_name
      FROM project_asset_bindings b
      JOIN ai_projects p ON p.id = b.project_id AND p.owner_id = b.owner_id
      JOIN assets a ON a.id = b.asset_id AND a.owner_id = b.owner_id
@@ -197,7 +213,7 @@ export async function getOwnedProjectAssetRecords(
   versionNumber: number,
 ): Promise<BoundProjectAssetRecord[]> {
   const rows = await query<BindingRow>(
-    `SELECT b.asset_id, a.original_name, a.format, a.category, a.mime_type, a.size_bytes, a.content_hash, a.storage_key, b.created_at
+    `SELECT b.asset_id, a.original_name, a.format, a.category, a.mime_type, a.size_bytes, a.content_hash, a.storage_key, b.created_at, a.source_asset_id, a.source_license, a.source_license_url, a.source_attribution, a.source_creator_username, a.source_creator_display_name
      FROM project_asset_bindings b
      JOIN ai_projects p ON p.id = b.project_id AND p.owner_id = b.owner_id
      JOIN assets a ON a.id = b.asset_id AND a.owner_id = b.owner_id
@@ -216,7 +232,7 @@ export async function getBoundProjectAssetForPreview(
   assetId: string,
 ): Promise<BoundProjectAssetRecord> {
   const rows = await query<BindingRow>(
-    `SELECT b.asset_id, a.original_name, a.format, a.category, a.mime_type, a.size_bytes, a.content_hash, a.storage_key, b.created_at
+    `SELECT b.asset_id, a.original_name, a.format, a.category, a.mime_type, a.size_bytes, a.content_hash, a.storage_key, b.created_at, a.source_asset_id, a.source_license, a.source_license_url, a.source_attribution, a.source_creator_username, a.source_creator_display_name
      FROM project_asset_bindings b
      JOIN ai_projects p ON p.id = b.project_id AND p.owner_id = b.owner_id
      JOIN assets a ON a.id = b.asset_id AND a.owner_id = b.owner_id

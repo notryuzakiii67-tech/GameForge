@@ -1,9 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { closeDatabase, execute, newId, nowIso, query } from "@/lib/db";
 
+const cleanupState = vi.hoisted(() => ({ failKeys: [] as string[] }));
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/asset-storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/asset-storage")>();
+  return {
+    ...actual,
+    deletePrivateAssetObject: vi.fn(async (key: string) => {
+      if (cleanupState.failKeys.includes(key)) throw new Error("simulated temporary delete failure");
+      return actual.deletePrivateAssetObject(key);
+    }),
+  };
+});
 
-import { createAssetUploadIntent, deletePrivateAsset, getPrivateAsset, listPrivateAssets, uploadLocalAssetBytes } from "@/lib/asset-service";
+import { cleanupExpiredAssetUploads, createAssetUploadIntent, deletePrivateAsset, getPrivateAsset, listPrivateAssets, uploadLocalAssetBytes } from "@/lib/asset-service";
 import { ApiError } from "@/lib/http";
 import { getObject, putObject } from "@/lib/storage";
 
@@ -91,5 +102,54 @@ describe("private asset upload service", () => {
     await execute(`UPDATE assets SET deleted_at = ?, upload_status = 'failed', updated_at = ? WHERE id = ?`, [nowIso(), nowIso(), first.assetId]);
     mutableEnv.ASSET_MAX_PER_USER = oldAssetLimit;
     await expect(createAssetUploadIntent(owner, "over-by-one.png", png.byteLength + 1)).rejects.toMatchObject({ code: "ASSET_STORAGE_QUOTA", status: 413 });
+  });
+
+  it("retries failed deletion of tombstoned private objects with a backoff lease", async () => {
+    const owner = await createUser();
+    const intent = await createAssetUploadIntent(owner, "retry-delete.png", png.byteLength);
+    const saved = await uploadLocalAssetBytes(owner, intent.assetId, png);
+    const asset = await getPrivateAsset(owner, saved.id);
+    const stagingKey = `assets/pending/${owner}/${saved.id}`;
+    cleanupState.failKeys = [asset.storageKey, stagingKey];
+    try {
+      const deleted = await deletePrivateAsset(owner, saved.id);
+      expect(deleted).toMatchObject({ storageCleanupPending: true });
+      const firstAttempt = await query<{ asset_storage_cleanup_status: string; asset_storage_cleanup_attempts: number; asset_storage_cleanup_next_attempt_at: string | null }>(
+        `SELECT asset_storage_cleanup_status, asset_storage_cleanup_attempts, asset_storage_cleanup_next_attempt_at FROM assets WHERE id = ?`, [saved.id]);
+      expect(firstAttempt[0]).toMatchObject({ asset_storage_cleanup_status: "pending", asset_storage_cleanup_attempts: 1 });
+      expect(firstAttempt[0]?.asset_storage_cleanup_next_attempt_at).toBeTruthy();
+      expect(new Uint8Array((await getObject(asset.storageKey)).body)).toEqual(png);
+
+      cleanupState.failKeys = [];
+      await execute(`UPDATE assets SET asset_storage_cleanup_next_attempt_at = ? WHERE id = ?`, [new Date(Date.now() - 60_000).toISOString(), saved.id]);
+      const swept = await cleanupExpiredAssetUploads(100);
+      expect(swept.cleanupCompleted).toBeGreaterThanOrEqual(1);
+      const final = await query<{ asset_storage_cleanup_status: string; asset_storage_cleanup_attempts: number }>(
+        `SELECT asset_storage_cleanup_status, asset_storage_cleanup_attempts FROM assets WHERE id = ?`, [saved.id]);
+      expect(final[0]).toEqual({ asset_storage_cleanup_status: "complete", asset_storage_cleanup_attempts: 2 });
+      await expect(getObject(asset.storageKey)).rejects.toMatchObject({ status: 404 });
+    } finally { cleanupState.failKeys = []; }
+  });
+
+  it("retries a leftover staging object without deleting a ready private asset", async () => {
+    const owner = await createUser();
+    const intent = await createAssetUploadIntent(owner, "staging-retry.png", png.byteLength);
+    const stagingKey = `assets/pending/${owner}/${intent.assetId}`;
+    cleanupState.failKeys = [stagingKey];
+    try {
+      const saved = await uploadLocalAssetBytes(owner, intent.assetId, png);
+      const privateRecord = await getPrivateAsset(owner, saved.id);
+      const initial = await query<{ asset_staging_cleanup_status: string; asset_staging_cleanup_attempts: number }>(
+        `SELECT asset_staging_cleanup_status, asset_staging_cleanup_attempts FROM assets WHERE id = ?`, [saved.id]);
+      expect(initial[0]).toEqual({ asset_staging_cleanup_status: "pending", asset_staging_cleanup_attempts: 0 });
+      expect(new Uint8Array((await getObject(privateRecord.storageKey)).body)).toEqual(png);
+
+      cleanupState.failKeys = [];
+      await execute(`UPDATE assets SET asset_staging_cleanup_next_attempt_at = ? WHERE id = ?`, [new Date(Date.now() - 60_000).toISOString(), saved.id]);
+      const swept = await cleanupExpiredAssetUploads(100);
+      expect(swept.stagingCleanupCompleted).toBeGreaterThanOrEqual(1);
+      expect(new Uint8Array((await getObject(privateRecord.storageKey)).body)).toEqual(png);
+      await expect(getObject(stagingKey)).rejects.toMatchObject({ status: 404 });
+    } finally { cleanupState.failKeys = []; }
   });
 });

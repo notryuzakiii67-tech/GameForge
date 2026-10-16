@@ -14,7 +14,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     requireUuid(id, "asset id");
     const rows = await query<{ filename: string; storage_key: string; size_bytes: number; content_hash: string }>(
       `SELECT original_name AS filename, storage_key, size_bytes, content_hash FROM assets
-       WHERE id = ? AND upload_status = 'ready' AND publication_status IN ('pending_review', 'published', 'removed') AND deleted_at IS NULL LIMIT 1`, [id]);
+       WHERE id = ? AND upload_status = 'ready' AND publication_status IN ('pending_review', 'published', 'rejected', 'removed') AND deleted_at IS NULL LIMIT 1`, [id]);
     const asset = rows[0];
     if (!asset) throw new ApiError(404, "ASSET_NOT_AVAILABLE_FOR_REVIEW", "This asset is not available to moderators for review.");
     let stored: Awaited<ReturnType<typeof getObject>>;

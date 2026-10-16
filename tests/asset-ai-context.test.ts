@@ -90,6 +90,9 @@ describe("AI private asset prompt context", () => {
     expect(providerState.prompts).toHaveLength(1);
     expect(providerState.prompts[0]).toContain("Moon Garden Reference.png");
     expect(providerState.prompts[0]).toContain(`gameforge-asset://${assetId}`);
+    expect(providerState.prompts[0]).toContain("recommended use: 2D image, sprite, background, or texture source");
+    expect(providerState.prompts[0]).toContain(`<img src="gameforge-asset://${assetId}" alt="Game asset">`);
+    expect(providerState.prompts[0]).toContain("do not assume a renderer/library is installed");
     expect(body.assetBindings).toMatchObject([{ assetId, placeholder: `gameforge-asset://${assetId}` }]);
     expect(await query(`SELECT asset_id FROM project_asset_bindings WHERE project_id = ? AND version_number = 1`, [body.project.id])).toHaveLength(1);
     expect(providerState.prompts[0]).toContain("width: 1");

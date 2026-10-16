@@ -79,6 +79,36 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       archiveEntries[assetPathById.get(asset.assetId)!] = stored.body;
     }
 
+    const importedAssets = boundAssets.filter((asset) => asset.importSource !== null);
+    if (importedAssets.length) {
+      const clean = (value: string) => value.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+      const lines = [
+        "GameForge imported asset attribution and license notice",
+        "",
+        "These private assets were imported from the GameForge Asset Store. Preserve the attribution and follow each license's terms when using or redistributing them, including ShareAlike obligations where they apply.",
+        "",
+        ...importedAssets.flatMap((asset) => {
+          const source = asset.importSource!;
+          return [
+            `File: ${clean(asset.filename)}`,
+            `Attribution: ${clean(source.attribution)}`,
+            `Original creator: ${clean(source.creatorDisplayName)} (@${clean(source.creatorUsername)})`,
+            `License: ${clean(source.license)} — ${clean(source.licenseUrl)}`,
+            `GameForge source asset ID: ${source.assetId ?? "no longer available"}`,
+            "",
+          ];
+        }),
+      ];
+      const notice = new TextEncoder().encode(lines.join("\n"));
+      let noticePath = "GAMEFORGE_ASSET_LICENSES.txt";
+      const occupied = new Set(Object.keys(archiveEntries).map((item) => item.toLowerCase()));
+      let suffix = 1;
+      while (occupied.has(noticePath.toLowerCase())) noticePath = `GAMEFORGE_ASSET_LICENSES-${suffix++}.txt`;
+      totalBytes += notice.byteLength;
+      if (totalBytes > MAX_EXPORT_BYTES) throw new ApiError(413, "EXPORT_TOO_LARGE", "This project’s source and bound assets exceed the 100 MiB ZIP export limit. Remove some bindings or download the assets individually.");
+      archiveEntries[noticePath] = notice;
+    }
+
     const archive = zipSync(archiveEntries, { level: 6 });
     const slug = project.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "gameforge-project";
     return new Response(archive as BodyInit, {
