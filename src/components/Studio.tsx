@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle, ArrowDownToLine, ArrowLeft, Check, ChevronRight, Code2, FileBox, FileCode2, FileJson2,
   FileText, LoaderCircle, LockKeyhole, RotateCcw, Save, Send, Settings2, Sparkles, WandSparkles,
 } from "lucide-react";
 import { genres } from "@/lib/demo-games";
+import { replaceWithAssetReference } from "@/lib/asset-replacement";
 import type { PublicUser } from "@/lib/auth";
 import type { AiProvider, ProviderModel } from "@/lib/ai/providers";
 import type { ProjectFile } from "@/lib/zip";
@@ -80,6 +81,7 @@ export function Studio({ initialProjectId }: { initialProjectId?: string }) {
   const [dirty, setDirty] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
   const selectedProvider = providerOptions.find((item) => item.id === provider)!;
+  const codeEditorRef = useRef<HTMLTextAreaElement>(null);
   const indexPath = useMemo(() => files.find((file) => file.path.toLowerCase() === "index.html")?.path ?? files.find((file) => file.path.toLowerCase().endsWith("/index.html"))?.path ?? "index.html", [files]);
   const activeFile = files.find((file) => file.path === activePath);
 
@@ -457,6 +459,23 @@ export function Studio({ initialProjectId }: { initialProjectId?: string }) {
     finally { setBindingSaving(false); }
   }
 
+  function replaceSelectionWithBoundAsset(asset: ProjectAssetBinding) {
+    const editor = codeEditorRef.current;
+    if (!editor || !activeFile || projectStatus !== "draft") {
+      setError("Open a code file in a private draft before inserting an asset reference.");
+      return;
+    }
+    const result = replaceWithAssetReference(editor.value, editor.selectionStart, editor.selectionEnd, asset.placeholder);
+    setCode(result.content);
+    setDirty(true);
+    setError("");
+    setNotice(`Inserted ${asset.filename} as a private asset reference. Save code as a new version to persist it.`);
+    window.requestAnimationFrame(() => {
+      editor.focus();
+      editor.setSelectionRange(result.cursor, result.cursor);
+    });
+  }
+
   function chooseFile(path: string) {
     if (dirty && !window.confirm("Discard unsaved code edits and switch files?")) return;
     setActivePath(path);
@@ -537,12 +556,12 @@ export function Studio({ initialProjectId }: { initialProjectId?: string }) {
       <aside className={`studio-panel studio-right-panel${mobileTab === "files" ? " mobile-active" : ""}`}>
         <div className="studio-panel-section"><div className="studio-panel-heading">Project files <span>{files.length}</span></div>
           {files.length ? <div className="studio-file-list">{files.map((file) => <button key={file.path} className={`studio-file${activePath === file.path ? " active" : ""}`} onClick={() => { chooseFile(file.path); setMobileTab("files"); }} title={file.path}>{iconForFile(file.path)}<span>{file.path}</span></button>)}</div> : <p className="studio-empty-note">Generated files will be listed here.</p>}
-          {activeFile && <div className="studio-editor-wrap"><div className="studio-editor-toolbar"><span>{activePath}</span>{dirty && <span className="dirty-dot">Edited</span>}</div><textarea className="studio-code-view studio-code-editor" aria-label={`Edit ${activePath}`} spellCheck={false} value={code} onChange={(event) => { setCode(event.target.value); setDirty(true); }} /><button className="button button-dark button-small studio-save-code" onClick={saveCode} disabled={!dirty || saving}>{saving ? <LoaderCircle size={12} className="spin" /> : <Save size={12} />} Save code as new version</button></div>}
+          {activeFile && <div className="studio-editor-wrap"><div className="studio-editor-toolbar"><span>{activePath}</span>{dirty && <span className="dirty-dot">Edited</span>}</div><textarea ref={codeEditorRef} className="studio-code-view studio-code-editor" aria-label={`Edit ${activePath}`} spellCheck={false} value={code} onChange={(event) => { setCode(event.target.value); setDirty(true); }} /><button className="button button-dark button-small studio-save-code" onClick={saveCode} disabled={!dirty || saving}>{saving ? <LoaderCircle size={12} className="spin" /> : <Save size={12} />} Save code as new version</button></div>}
         </div>
         {projectId && <div className="studio-panel-section studio-bound-assets"><div className="studio-panel-heading">Bound private assets <span>{bindingsLoading ? "…" : projectBindings.length}</span></div>
-          {projectBindings.length ? <div className="studio-bound-asset-list">{projectBindings.map((asset) => <div className="studio-bound-asset" key={asset.assetId}><div><strong title={asset.filename}>{asset.filename}</strong><small>{asset.format} · {Math.max(1, Math.ceil(asset.sizeBytes / 1024))} KB</small><code>{asset.placeholder}</code>{asset.importSource && <small className="studio-asset-license-note">{asset.importSource.attribution} · <a href={asset.importSource.licenseUrl} target="_blank" rel="noopener noreferrer">{asset.importSource.license}</a></small>}</div><button className="button button-outline button-small" onClick={() => void unbindProjectAsset(asset.assetId)} disabled={bindingSaving || generating || saving || dirty || projectStatus !== "draft"} title="Unbind in a new version; earlier versions retain their binding">Unbind</button></div>)}</div>
+          {projectBindings.length ? <div className="studio-bound-asset-list">{projectBindings.map((asset) => <div className="studio-bound-asset" key={asset.assetId}><div><strong title={asset.filename}>{asset.filename}</strong><small>{asset.format} · {Math.max(1, Math.ceil(asset.sizeBytes / 1024))} KB</small><code>{asset.placeholder}</code>{asset.importSource && <small className="studio-asset-license-note">{asset.importSource.attribution} · <a href={asset.importSource.licenseUrl} target="_blank" rel="noopener noreferrer">{asset.importSource.license}</a></small>}</div><div className="studio-bound-asset-actions"><button className="button button-outline button-small" onClick={() => replaceSelectionWithBoundAsset(asset)} disabled={!activeFile || bindingSaving || generating || saving || projectStatus !== "draft"} title="Replace selected text in the active file, or insert at the caret">Use in code</button><button className="button button-outline button-small" onClick={() => void unbindProjectAsset(asset.assetId)} disabled={bindingSaving || generating || saving || dirty || projectStatus !== "draft"} title="Unbind in a new version; earlier versions retain their binding">Unbind</button></div></div>)}</div>
             : <p className="studio-empty-note">{bindingsLoading ? "Loading version-specific bindings…" : "No private assets are bound to this version. Select assets on the left or bind them from your library."}</p>}
-          <p className="studio-asset-binding-note">Bindings are versioned; changing them saves a new version and leaves older versions intact. Public sharing and game submission are blocked while private bindings or unresolved asset placeholders remain.</p>
+          <p className="studio-asset-binding-note">Select an existing source/URL in the active file, then use an asset’s <strong>Use in code</strong> action to replace it with that bound placeholder (or insert it at the caret). Save code as a new version to persist the edit. A compatible image/audio/model loader is still required; this is guided text replacement, not automatic scene/material authoring. Binding changes leave older versions intact, and public sharing/game submission remain blocked while private bindings or unresolved placeholders exist.</p>
         </div>}
         <div className="studio-panel-section studio-history-section"><div className="studio-panel-heading">Version history <span>{versions.length}</span></div>
           {versions.length ? <div className="studio-history-list">{versions.map((item) => <div className="history-item" key={item.version}><strong>v{item.version} · {item.provider}/{item.model}</strong><span>{item.summary || item.prompt || "Saved project version"}</span><small>{new Date(item.createdAt).toLocaleString()}</small>{item.version !== version && <button onClick={() => restoreVersion(item.version)}><RotateCcw size={10} /> Restore as new version</button>}</div>)}</div> : <p className="studio-empty-note">Each generated or saved change adds a version here.</p>}

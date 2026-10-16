@@ -558,7 +558,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .studio-bound-asset .studio-asset-license-note { max-width: 200px; color: #c5c1d0; line-height: 1.4; overflow-wrap: anywhere; }
 .studio-asset-license-note a { color: #c7baff; text-decoration: underline; }
 .studio-bound-asset code { overflow-wrap: anywhere; color: #a99bea; font: 6px ui-monospace, SFMono-Regular, Menlo, monospace; }
-.studio-bound-asset > button { flex: 0 0 auto; }
+.studio-bound-asset-actions { flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.studio-bound-asset-actions .button { min-height: 27px; padding: 0 7px; font-size: 7px; }
 .studio-asset-binding-note { margin: 8px 0 0; color: #817f8f; font-size: 7px; line-height: 1.6; }
 
 @media (max-width: 760px) {
