@@ -5,8 +5,8 @@ This document describes the protections present in the MVP and the controls an o
 ## Trust boundaries
 
 - **GameForge application server:** handles account sessions, database access, provider requests, and upload validation. Database and S3 credentials are server-only environment variables.
-- **User-uploaded and AI-generated game content:** treated as untrusted. The app validates file structure but never executes a game on the application server. Games run in the visitor's browser.
-- **AI providers:** receive the prompt and user-supplied key when AI features are used. Each provider has its own privacy, retention, billing, and quota policies.
+- **User-uploaded and AI-generated content:** treated as untrusted. The app validates structure but never executes a game on the application server. Game builds run in the visitor's browser; private media assets are served only through owner-authenticated routes.
+- **AI providers:** receive prompts and generated project context when the server-side integration is used. Provider credentials come from server-only environment variables; providers apply their own privacy, retention, billing, and quota policies.
 - **Production content host:** must be a different HTTPS origin from the application host. It serves public published builds and must not share the app's host-only session cookie.
 
 ## Implemented controls
@@ -29,6 +29,15 @@ This document describes the protections present in the MVP and the controls an o
 
 Structural validation is **not** antivirus scanning, a malware scan, a human code review, or proof that a game runs correctly. Moderators should inspect submissions and use a disposable browser profile for suspicious content.
 
+### Individual private assets
+
+- Asset uploads accept only PNG/JPEG/WebP, self-contained glTF 2.0/GLB 2.0 with embedded resources, PCM/IEEE-float WAV, and OGG Vorbis/Opus. File signatures, structural lengths, format fields, CRCs where supported, image dimensions, embedded model references, and bounded model complexity are checked; extension/MIME metadata alone is not trusted. This does not fully decode every media codec or scan for malware.
+- Default limits are 20 MiB/file, 100 MiB per account, and 100 active assets. Server-configured values are bounded. S3 uploads use a five-minute presigned POST policy bound to one owner-scoped `assets/pending/` key, exact file size, binary content type, and private cache metadata. Completion reads the staged object, rechecks size, inspects the content, writes the validated bytes to a separate `assets/private/` key, and records a SHA-256 digest before it can be listed as ready; replaying an unexpired POST cannot overwrite the final preview.
+- The object bucket remains private. Uploads use `assets/private/{ownerId}/{assetId}` keys; no public URL or unauthenticated bucket read is returned. Listing, deletion, and `/api/assets/{id}/file` require the authenticated owner. Cross-owner access is hidden as 404. File responses verify stored size and SHA-256 content integrity, then use `private, no-store`, explicit validated MIME types, `nosniff`, a same-origin resource policy, and a restrictive CSP.
+- The Asset Studio renders only the supported image/audio formats in browser-native controls and self-contained GLB/glTF through the pinned Three.js loader. External model resources are rejected by validation. Preview parsing still occurs in a browser process; browser decoder/WebGL vulnerabilities and resource exhaustion are not eliminated.
+- AI Game Studio can attach up to six user-selected assets as prompt references. It sends filenames, measured validation metadata, and opaque asset UUIDs/placeholders to the chosen external provider; it does not send file bytes, storage keys, or private preview URLs. Selected assets are bound to the saved project version. Preview resolution uses a random 32-byte bearer token whose hash is stored server-side, scoped to one project/version, expires after 15 minutes, and grants only bound private asset reads. Preview responses are private/no-store, size/hash-checked, and do not rely on account cookies; the UI renews the grant while the preview is open. ZIP export includes only the owner’s bound files and rewrites placeholders to relative paths. Public sharing/game submission are blocked while private bindings or unresolved asset placeholders remain. No public Asset Store, rights/license declaration, public-asset consent, asset moderation/appeal/takedown, malware scan, format-specific scene/sprite adapter, or conversion service exists yet.
+- A pending intent expires after 10 minutes and direct S3 POST signatures expire after five. When a user starts a later upload, the service closes that user's expired pending rows and attempts to delete their objects. There is no scheduled/global orphan sweeper, so operators must monitor/clean abandoned S3 objects and should apply a suitable bucket lifecycle/monitoring policy.
+
 ### Browser isolation
 
 - Game players use an iframe `sandbox` without `allow-same-origin`, top-navigation, popups, or unrestricted storage permissions. The response also includes a restrictive Content Security Policy, `X-Content-Type-Options: nosniff`, and explicit MIME types.
@@ -40,17 +49,22 @@ A browser sandbox is not a complete resource-isolation system. It cannot guarant
 
 ### AI provider keys and output
 
-- The Studio stores the key only in component memory and submits it in the request body for model discovery and generation. There is no key field in the database schema, audit data, or AI-generation record.
+- The Studio defaults to Gemini and never accepts a provider key from a client. Server routes read `GEMINI_API_KEY`, `MISTRAL_API_KEY`, and/or `GROQ_API_KEY` from the server environment and do not include them in responses, prompts, project files, audit data, or AI-generation records. Operators must manage them with the hosting secret manager.
+- A provider quota/rate-limit response triggers sequential fallback through the fixed Gemini → Mistral → Groq order; only later providers with valid configured keys and discoverable models are attempted. A manually selected Mistral provider can fall back only to Groq. Fallback model IDs may be configured with `AI_MISTRAL_FALLBACK_MODEL` and `AI_GROQ_FALLBACK_MODEL`; otherwise the first discovered generative model is used.
+- The Studio explains that fallback may send prompts and selected asset metadata to another external provider. In some cases the selected provider already received the prompt before returning its quota response. Operators must review privacy, retention, data-handling, quota, and billing terms for every configured provider. Fallback does not guarantee a free quota or successful generation.
 - Provider selection is an enum mapped to fixed official API hosts; callers cannot supply a URL. Requests use timeouts and bounded response reads, and provider errors are translated without returning raw provider bodies.
-- Application error logs record a request ID and error type, not the request body, prompt, or API key. The key is not intentionally logged by GameForge code. Network intermediaries and the selected AI provider remain separate trust parties; use HTTPS and review their terms.
+- Application error logs record a request ID and error type, not the request body, prompt, or API key. The key is not intentionally logged by GameForge code. Network intermediaries and each attempted AI provider remain separate trust parties; use HTTPS and review their terms.
 - Generated projects have path, extension, size, entry-point, external-reference, and JavaScript syntax checks. Syntax checking compiles JavaScript but does **not** execute it. Generated games remain untrusted and are previewed in a sandbox.
-- There is no shared or paid fallback. Users are responsible for their provider's usage charges and terms. Per-account daily quotas and account/client-address request limits reduce accidental or abusive usage but are not a provider billing cap.
+- Configured provider keys are server-managed and may incur shared platform charges. Per-account daily quotas and account/client-address request limits reduce accidental or abusive usage, but are not a provider billing cap. No provider key is configured or externally tested in this workspace.
 
 ## Production operator checklist
 
 - [ ] Set `DATABASE_URL` to PostgreSQL with TLS; use a serverless-friendly pooled URL and small `DATABASE_POOL_SIZE`.
 - [ ] Back up PostgreSQL and test a restore; keep migrations controlled and apply `npm run db:migrate` before sending traffic to a release.
-- [ ] Set all `S3_*` values as encrypted server-only Vercel environment variables. Keep the bucket private/block public access; grant only the required object read/write actions to the game-build prefix.
+- [ ] Set all `S3_*` values as encrypted server-only Vercel environment variables. Keep the bucket private/block public access; scope object read/write/delete permissions to the game-build, `assets/private/`, and `assets/pending/` prefixes.
+- [ ] Configure storage CORS for presigned `POST` uploads from exact app origins only; test valid upload, corrupt-file rejection, cross-owner 404, private/no-store previews, quota behavior, and storage cleanup with a disposable account.
+- [ ] If enabling an AI provider, add only the intended `GEMINI_API_KEY`, `MISTRAL_API_KEY`, and/or `GROQ_API_KEY` to the server secret manager; test a real model and monitor provider billing separately.
+- [ ] If enabling email verification/recovery, configure `ACCOUNT_RECOVERY_SECRET`, `RESEND_API_KEY`, and a verified `GAMEFORGE_EMAIL_FROM`; test delivery, attempt limits, and session revocation with an owned account.
 - [ ] Attach the app and game-content domains to the same Vercel project. Configure `NEXT_PUBLIC_SITE_URL` and `GAME_CONTENT_ORIGIN` as separate HTTPS origins and verify the latter is never an app-cookie domain.
 - [ ] Select a supported Node.js runtime version (22.13+), confirm Vercel function durations/body-size limits against configured upload and AI limits, and protect Production, Preview, and Development environments separately.
 - [ ] Create the first admin through the interactive `npm run admin:create` script from a trusted operator environment; do not add an admin password or role to a seed fixture.
@@ -59,7 +73,7 @@ A browser sandbox is not a complete resource-isolation system. It cannot guarant
 
 ## Known gaps and moderation boundaries
 
-- Email verification, password recovery/reset, OAuth, MFA, and account self-service credential rotation are not implemented.
+- Email verification and password reset are implemented only when `ACCOUNT_RECOVERY_SECRET`, `RESEND_API_KEY`, and `GAMEFORGE_EMAIL_FROM` are configured; no live email provider was tested here. SMS, OAuth, MFA, and account self-service password-change/credential-rotation flows are not implemented.
 - ZIP validation does not scan malware; generated project validation does not prove safe or correct runtime behavior.
 - The MVP admin console reviews pending game/project submissions and reports. For a non-demo game or AI-project report, moderators can explicitly take down a public/pending item; GameForge marks it removed/private and refuses future platform playback while retaining stored files for review. Merely marking a report actioned does not remove its target. Bundled starter demos are deployment assets and require a deployment update for removal. A site administrator can suspend/restore reported user accounts with an audit note or restore suspended users from a dedicated queue; status changes, session revocation on suspension, and audit notes are committed together. Active-admin decisions are serialized to protect administrator availability; self-suspension and suspending the last active admin are blocked. There is no appeal workflow or storage-file deletion.
 - There is no automated malware scanner, user-content sandbox service, database backup/restore automation, object lifecycle/orphan cleanup, or production alerting configured by this repository.

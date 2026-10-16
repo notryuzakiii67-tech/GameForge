@@ -1,6 +1,7 @@
 import "server-only";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ApiError } from "@/lib/http";
 import { safeProjectPath } from "@/lib/zip";
@@ -64,7 +65,21 @@ function localFilePath(key: string): string {
   return resolved;
 }
 
-export async function putObject(key: string, body: Uint8Array, contentType: string): Promise<void> {
+export function localStoragePathForKey(key: string): string {
+  return localFilePath(key);
+}
+
+export function s3ClientForAssetStorage(): S3Client {
+  return client();
+}
+
+export function s3BucketForAssetStorage(): string {
+  const config = s3Configuration();
+  if (!config) throw new ApiError(503, "STORAGE_NOT_CONFIGURED", "Private asset storage is not configured.");
+  return config.bucket;
+}
+
+export async function putObject(key: string, body: Uint8Array, contentType: string, cacheControl = "public, max-age=31536000, immutable"): Promise<void> {
   const safeKey = safeProjectPath(key);
   if (isLocalStorage()) {
     const filePath = localFilePath(safeKey);
@@ -79,7 +94,7 @@ export async function putObject(key: string, body: Uint8Array, contentType: stri
     Key: safeKey,
     Body: body,
     ContentType: contentType,
-    CacheControl: "public, max-age=31536000, immutable",
+    CacheControl: cacheControl,
   }));
 }
 

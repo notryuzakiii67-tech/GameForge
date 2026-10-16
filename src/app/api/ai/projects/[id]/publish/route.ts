@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { validateAiProject } from "@/lib/ai/validate";
+import { hasPrivateAssetReferences } from "@/lib/asset-references";
+import { getProjectVersionAssetIds } from "@/lib/project-assets";
 import { execute, query, newId, nowIso } from "@/lib/db";
 import { ApiError, assertSameOrigin, errorResponse, readJson, requireUuid } from "@/lib/http";
 import { assertStorageReadyForPublishing, contentTypeForPath, putObject } from "@/lib/storage";
@@ -31,13 +33,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const existingGame = await query<{ id: string; slug: string; status: string }>(`SELECT id, slug, status FROM games WHERE source_project_id = ? AND developer_id = ? LIMIT 1`, [projectId, user.id]);
     if (existingGame[0]) return Response.json({ game: existingGame[0], message: `This project already has a ${existingGame[0].status} game submission.` }, { status: 200, headers: { "Cache-Control": "no-store" } });
 
-    const latest = await query<{ manifest_json: string }>(`SELECT manifest_json FROM ai_project_versions WHERE project_id = ? ORDER BY version_number DESC LIMIT 1`, [projectId]);
+    const latest = await query<{ manifest_json: string; version_number: number }>(`SELECT manifest_json, version_number FROM ai_project_versions WHERE project_id = ? ORDER BY version_number DESC LIMIT 1`, [projectId]);
     if (!latest[0]) throw new ApiError(400, "PROJECT_VERSION_REQUIRED", "Create a playable version before publishing.");
     let files;
     try {
       files = validateAiProject(JSON.parse(latest[0].manifest_json));
     } catch {
       throw new ApiError(409, "PROJECT_INVALID", "This version did not pass final project validation.");
+    }
+    const privateAssetIds = await getProjectVersionAssetIds(user.id, projectId, Number(latest[0].version_number));
+    if (privateAssetIds.length || hasPrivateAssetReferences(files)) {
+      throw new ApiError(409, "PRIVATE_ASSET_PUBLICATION_BLOCKED", "This version uses private asset bindings or unresolved asset placeholders. Remove them before submitting; public asset rights and consent are not implemented yet.");
     }
     assertStorageReadyForPublishing();
     const build = textFilesToBuild(files);

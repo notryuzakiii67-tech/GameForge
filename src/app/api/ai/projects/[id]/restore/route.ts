@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { validateAiProject } from "@/lib/ai/validate";
-import { execute, query, newId, nowIso } from "@/lib/db";
+import { query, newId, nowIso, transaction } from "@/lib/db";
+import { copyProjectVersionAssetBindingsInTransaction, getProjectAssetBindings } from "@/lib/project-assets";
 import { ApiError, assertSameOrigin, errorResponse, readJson, requireUuid } from "@/lib/http";
 
 export const runtime = "nodejs";
@@ -32,13 +33,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const maxVersions = Math.min(100, Math.max(1, Number(process.env.MAX_AI_VERSIONS || 20)));
     if (version > maxVersions) throw new ApiError(409, "VERSION_LIMIT_REACHED", `This project has reached its ${maxVersions}-version limit.`);
     const timestamp = nowIso();
-    await execute(
-      `INSERT INTO ai_project_versions(id, project_id, version_number, prompt_summary, provider, model, manifest_json, validation_status, change_summary, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'validated', ?, ?)`,
-      [newId(), id, version, `Restore version ${input.version}`, sources[0].provider, sources[0].model, JSON.stringify(files), "Restored a previous version; earlier history was preserved.", timestamp],
-    );
-    await execute(`UPDATE ai_projects SET visibility = 'private', status = 'draft', updated_at = ? WHERE id = ?`, [timestamp, id]);
-    return Response.json({ ok: true, version, files, summary: "Previous version restored as a new version." }, { headers: { "Cache-Control": "no-store" } });
+    await transaction(async (tx) => {
+      await tx.execute(
+        `INSERT INTO ai_project_versions(id, project_id, version_number, prompt_summary, provider, model, manifest_json, validation_status, change_summary, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'validated', ?, ?)`,
+        [newId(), id, version, `Restore version ${input.version}`, sources[0].provider, sources[0].model, JSON.stringify(files), "Restored a previous version; earlier history was preserved.", timestamp],
+      );
+      await copyProjectVersionAssetBindingsInTransaction(tx, user.id, id, input.version, version);
+      await tx.execute(`UPDATE ai_projects SET visibility = 'private', status = 'draft', updated_at = ? WHERE id = ? AND owner_id = ?`, [timestamp, id, user.id]);
+    });
+    const assetBindings = await getProjectAssetBindings(user.id, id, version);
+    return Response.json({ ok: true, version, files, assetBindings: assetBindings.bindings, summary: "Previous version restored as a new version." }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return errorResponse(error);
   }

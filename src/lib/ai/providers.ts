@@ -1,26 +1,28 @@
+import "server-only";
 import { z } from "zod";
 import { ApiError } from "@/lib/http";
 import type { ProjectFile } from "@/lib/zip";
 
 export const providerSchema = z.enum(["gemini", "mistral", "groq"]);
 export type AiProvider = z.infer<typeof providerSchema>;
+export const AI_PROVIDER_FALLBACK_ORDER: readonly AiProvider[] = ["gemini", "mistral", "groq"];
 
 export const providerInfo: Record<AiProvider, { name: string; description: string; keyUrl: string; endpoint: string }> = {
   gemini: {
     name: "Google Gemini",
-    description: "Use a Gemini API key from Google AI Studio. Model availability and quota are controlled by Google.",
+    description: "Uses the operator-configured Gemini key. Model availability and quota are controlled by Google.",
     keyUrl: "https://aistudio.google.com/app/apikey",
     endpoint: "https://generativelanguage.googleapis.com",
   },
   mistral: {
     name: "Mistral",
-    description: "Connect a Mistral API key. Available models and usage depend on your Mistral account.",
+    description: "Uses the operator-configured Mistral key. Available models and usage depend on the provider account.",
     keyUrl: "https://console.mistral.ai/api-keys/",
     endpoint: "https://api.mistral.ai",
   },
   groq: {
     name: "Groq",
-    description: "Connect a Groq API key for fast inference. Check your provider dashboard for model and quota availability.",
+    description: "Uses the operator-configured Groq key. Check provider account availability and quota.",
     keyUrl: "https://console.groq.com/keys",
     endpoint: "https://api.groq.com",
   },
@@ -48,9 +50,85 @@ const generatedResponseSchema = z.object({
 function validateApiKey(key: string): string {
   const trimmed = key.trim();
   if (trimmed.length < 8 || trimmed.length > 512 || /[\r\n]/.test(trimmed)) {
-    throw new ApiError(400, "INVALID_PROVIDER_KEY", "Enter a valid provider API key. It is sent only for this request and is not saved.");
+    throw new ApiError(400, "INVALID_PROVIDER_KEY", "The provider API key is not valid.");
   }
   return trimmed;
+}
+
+const providerEnvironment: Record<AiProvider, string> = {
+  gemini: "GEMINI_API_KEY",
+  mistral: "MISTRAL_API_KEY",
+  groq: "GROQ_API_KEY",
+};
+
+/** Provider credentials are read only in server routes; never accept them from browser input. */
+export function getConfiguredProviderKey(provider: AiProvider): string {
+  const envName = providerEnvironment[provider];
+  const value = process.env[envName]?.trim() ?? "";
+  if (value.length < 8 || value.length > 512 || /[\r\n]/.test(value)) {
+    throw new ApiError(503, "AI_PROVIDER_NOT_CONFIGURED", `${providerInfo[provider].name} is not configured. Set ${envName} in the server environment.`);
+  }
+  return validateApiKey(value);
+}
+
+export function providersAfter(provider: AiProvider): AiProvider[] {
+  const index = AI_PROVIDER_FALLBACK_ORDER.indexOf(provider);
+  return index < 0 ? [] : AI_PROVIDER_FALLBACK_ORDER.slice(index + 1);
+}
+
+export function isProviderQuotaError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.code === "PROVIDER_RATE_LIMITED";
+}
+
+export function isRecoverableFallbackError(error: unknown): boolean {
+  return error instanceof ApiError && [
+    "AI_PROVIDER_NOT_CONFIGURED", "INVALID_PROVIDER_KEY", "PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED",
+    "PROVIDER_UNAVAILABLE", "PROVIDER_TIMEOUT", "NO_MODELS_AVAILABLE", "MODEL_UNAVAILABLE", "GENERATION_TIMEOUT",
+  ].includes(error.code);
+}
+
+const fallbackModelEnvironment: Partial<Record<AiProvider, string>> = {
+  mistral: "AI_MISTRAL_FALLBACK_MODEL",
+  groq: "AI_GROQ_FALLBACK_MODEL",
+};
+
+export function chooseFallbackModel(provider: AiProvider, models: ProviderModel[]): string {
+  const preferredEnvironment = fallbackModelEnvironment[provider];
+  const preferred = preferredEnvironment ? process.env[preferredEnvironment]?.trim() : "";
+  if (preferred && models.some((model) => model.id === preferred)) return preferred;
+  return models[0]?.id ?? "";
+}
+
+export type FallbackProviderResolution = {
+  provider: AiProvider;
+  key: string;
+  models: ProviderModel[];
+};
+
+/** Resolve only providers later in the configured Gemini → Mistral → Groq chain. */
+export async function discoverFallbackProvider(after: AiProvider): Promise<FallbackProviderResolution> {
+  const remaining = providersAfter(after);
+  for (const provider of remaining) {
+    let key: string;
+    try { key = getConfiguredProviderKey(provider); }
+    catch (error) {
+      if (isRecoverableFallbackError(error)) continue;
+      throw error;
+    }
+    try {
+      const models = await discoverModels(provider, key);
+      if (models.length) return { provider, key, models };
+    } catch (error) {
+      if (isRecoverableFallbackError(error)) continue;
+      throw error;
+    }
+  }
+  const requiredKeys = remaining.map((provider) => providerEnvironment[provider]);
+  const setupHint = requiredKeys.length ? ` Configure a valid ${requiredKeys.join(" and/or ")} in the server environment.` : " There is no later provider in the fallback order.";
+  throw new ApiError(429, "AI_PROVIDER_CHAIN_EXHAUSTED", `The ${providerInfo[after].name} request could not be completed, and no later configured provider is available.${setupHint}`, {
+    requestedProvider: after,
+    fallbackOrder: AI_PROVIDER_FALLBACK_ORDER,
+  });
 }
 
 async function readBounded(response: Response, maxBytes: number): Promise<string> {
@@ -97,7 +175,7 @@ async function providerJson(url: string, key: string, provider: AiProvider, time
     throw new ApiError(503, "PROVIDER_UNAVAILABLE", `Could not reach ${providerInfo[provider].name}. Check the connection and try again.`);
   }
   const text = await readBounded(response, 512_000);
-  if (!response.ok) throw mapProviderError(response.status, response.headers, provider);
+  if (!response.ok) throw mapProviderError(response.status, response.headers, provider, text);
   try {
     return JSON.parse(text) as Record<string, unknown>;
   } catch {
@@ -105,15 +183,16 @@ async function providerJson(url: string, key: string, provider: AiProvider, time
   }
 }
 
-function mapProviderError(status: number, headers: Headers, provider: AiProvider): ApiError {
+function mapProviderError(status: number, headers: Headers, provider: AiProvider, responseBody = ""): ApiError {
   const providerName = providerInfo[provider].name;
-  if (status === 401 || status === 403) return new ApiError(400, "PROVIDER_AUTH_FAILED", `${providerName} rejected this API key. Check it in the provider dashboard.`);
-  if (status === 404) return new ApiError(400, "MODEL_UNAVAILABLE", `The selected model is not available for this ${providerName} key.`);
-  if (status === 429) {
+  const quotaSignal = /resource[_\s-]*exhausted|quota(?:[_\s-]*(?:exceeded|exhausted|limit|reached))|rate[_\s-]*limit|too many requests|requests per (?:minute|day)|tokens per minute|insufficient[_\s-]*quota/i.test(responseBody.slice(0, 64_000));
+  if (status === 429 || quotaSignal) {
     const rawRetry = Number(headers.get("retry-after") ?? 30);
     const retryAfter = Number.isFinite(rawRetry) ? Math.min(3600, Math.max(1, rawRetry)) : 30;
-    return new ApiError(429, "PROVIDER_RATE_LIMITED", `${providerName} has rate-limited this request. Check your provider quota or retry later.`, { retryAfter });
+    return new ApiError(429, "PROVIDER_RATE_LIMITED", `${providerName} has exhausted or rate-limited its API quota. GameForge will try the next configured provider, if available.`, { retryAfter });
   }
+  if (status === 401 || status === 403) return new ApiError(400, "PROVIDER_AUTH_FAILED", `${providerName} rejected this API key. Check it in the provider dashboard.`);
+  if (status === 404) return new ApiError(400, "MODEL_UNAVAILABLE", `The selected model is not available for this ${providerName} key.`);
   if (status >= 500) return new ApiError(503, "PROVIDER_UNAVAILABLE", `${providerName} is temporarily unavailable. Try again later.`);
   return new ApiError(502, "PROVIDER_REQUEST_FAILED", `${providerName} could not complete the request. Review the model and key settings.`);
 }
@@ -142,6 +221,17 @@ export async function discoverModels(provider: AiProvider, rawKey: string): Prom
   }
   if (!models.length) throw new ApiError(400, "NO_MODELS_AVAILABLE", `No generative models were available for this ${providerInfo[provider].name} key.`);
   return models.slice(0, 100);
+}
+
+export async function discoverModelsWithQuotaFallback(primary: AiProvider): Promise<{ provider: AiProvider; models: ProviderModel[]; fallbackFrom?: AiProvider }> {
+  const key = getConfiguredProviderKey(primary);
+  try {
+    return { provider: primary, models: await discoverModels(primary, key) };
+  } catch (error) {
+    if (!isProviderQuotaError(error)) throw error;
+    const fallback = await discoverFallbackProvider(primary);
+    return { provider: fallback.provider, models: fallback.models, fallbackFrom: primary };
+  }
 }
 
 function buildPrompt(userPrompt: string, existingFiles: ProjectFile[] | null, gameType: string): string {
@@ -228,7 +318,7 @@ export async function generateProject(
     throw new ApiError(503, "PROVIDER_UNAVAILABLE", `Could not reach ${providerInfo[provider].name}. Check the connection and try again.`);
   }
   const responseText = await readBounded(response, 1_500_000);
-  if (!response.ok) throw mapProviderError(response.status, response.headers, provider);
+  if (!response.ok) throw mapProviderError(response.status, response.headers, provider, responseText);
   let data: Record<string, unknown>;
   try {
     data = JSON.parse(responseText) as Record<string, unknown>;

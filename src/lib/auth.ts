@@ -11,7 +11,6 @@ export type PublicUser = {
   id: string;
   username: string;
   displayName: string;
-  email: string;
   role: "user" | "admin" | "moderator";
   avatar: string | null;
   bio: string;
@@ -60,7 +59,7 @@ export async function getCurrentUser(): Promise<PublicUser | null> {
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token || token.length > 128) return null;
   const rows = await query<UserRow>(
-    `SELECT u.id, u.username, u.display_name AS "displayName", u.email, u.role,
+    `SELECT u.id, u.username, u.display_name AS "displayName", u.role,
             u.avatar, u.bio, u.account_status AS "accountStatus"
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?`,
@@ -72,7 +71,6 @@ export async function getCurrentUser(): Promise<PublicUser | null> {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
-    email: user.email,
     role: user.role,
     avatar: user.avatar,
     bio: user.bio,

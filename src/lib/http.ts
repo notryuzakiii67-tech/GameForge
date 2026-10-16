@@ -24,7 +24,7 @@ export function errorResponse(error: unknown): NextResponse {
   if (error instanceof ApiError) {
     return NextResponse.json(
       { error: { code: error.code, message: error.message, ...(error.extra ?? {}) } },
-      { status: error.status },
+      { status: error.status, headers: { "Cache-Control": "no-store" } },
     );
   }
   const requestId = crypto.randomUUID();

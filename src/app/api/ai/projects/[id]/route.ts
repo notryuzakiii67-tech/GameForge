@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { execute, query, nowIso } from "@/lib/db";
+import { validateAiProject } from "@/lib/ai/validate";
+import { hasPrivateAssetReferences } from "@/lib/asset-references";
+import { getProjectVersionAssetIds } from "@/lib/project-assets";
 import { ApiError, assertSameOrigin, errorResponse, readJson, requireUuid } from "@/lib/http";
 import { genres } from "@/lib/demo-games";
 
@@ -36,17 +39,22 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     let latest = null;
     if (versions[0]) {
       try {
+        const manifest = validateAiProject(JSON.parse(versions[0].manifest_json));
+        if (isPublic && (hasPrivateAssetReferences(manifest) || (await getProjectVersionAssetIds(project.owner_id, id, versions[0].version_number)).length > 0)) {
+          throw new ApiError(404, "PROJECT_NOT_FOUND", "That project is not available.");
+        }
         latest = {
           version: versions[0].version_number,
           promptSummary: project.owner_id === user?.id ? versions[0].prompt_summary : undefined,
           provider: versions[0].provider,
           model: versions[0].model,
-          files: JSON.parse(versions[0].manifest_json),
+          files: manifest,
           validationStatus: versions[0].validation_status,
           summary: versions[0].change_summary,
           createdAt: versions[0].created_at,
         };
-      } catch {
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
         throw new ApiError(409, "PROJECT_VERSION_INVALID", "This project version could not be loaded.");
       }
     }
@@ -86,6 +94,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     let visibility = project.visibility;
     let status = project.status;
     if (input.visibility === "public" && project.visibility !== "public") {
+      const latest = await query<{ manifest_json: string; version_number: number }>(
+        `SELECT manifest_json, version_number FROM ai_project_versions WHERE project_id = ? ORDER BY version_number DESC LIMIT 1`, [id]);
+      if (!latest[0]) throw new ApiError(409, "PROJECT_VERSION_REQUIRED", "Create a validated version before requesting public sharing.");
+      let files;
+      try { files = validateAiProject(JSON.parse(latest[0].manifest_json)); }
+      catch { throw new ApiError(409, "PROJECT_VERSION_INVALID", "This project version is not available for public sharing."); }
+      const boundAssets = await getProjectVersionAssetIds(user.id, id, Number(latest[0].version_number));
+      if (boundAssets.length || hasPrivateAssetReferences(files)) {
+        throw new ApiError(409, "PRIVATE_ASSET_PUBLICATION_BLOCKED", "This version uses private asset bindings or unresolved placeholders. Remove them before public sharing; public asset rights and consent are not implemented yet.");
+      }
       visibility = "private";
       status = "pending";
     } else if (input.visibility === "private") {

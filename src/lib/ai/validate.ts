@@ -1,11 +1,13 @@
 import { Script } from "node:vm";
 import { ApiError } from "@/lib/http";
+import { extractPrivateAssetReferences } from "@/lib/asset-references";
 import { safeProjectPath, validateAiFiles, type ProjectFile } from "@/lib/zip";
 
 export function validateAiProject(rawFiles: unknown): ProjectFile[] {
   const files = validateAiFiles(rawFiles, true);
   const byPath = new Map(files.map((file) => [file.path, file.content]));
   for (const file of files) {
+    extractPrivateAssetReferences(file.content);
     if (!/\.(?:html?|js|mjs|cjs)$/i.test(file.path)) continue;
     const scripts: string[] = [];
     if (/\.(?:m?js|cjs)$/i.test(file.path)) scripts.push(file.content);

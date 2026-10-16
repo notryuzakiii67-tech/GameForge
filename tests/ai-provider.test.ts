@@ -1,11 +1,32 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { discoverModels, generateProject } from "@/lib/ai/providers";
+
+vi.mock("server-only", () => ({}));
+
+import { discoverModels, generateProject, getConfiguredProviderKey } from "@/lib/ai/providers";
 import { ApiError } from "@/lib/http";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { vi.stubGlobal("fetch", originalFetch); });
 
-describe("BYOK provider adapters", () => {
+describe("server-side AI provider adapters", () => {
+  it("reads provider keys from server environment variables and reports missing setup clearly", () => {
+    const previousGemini = process.env.GEMINI_API_KEY;
+    const previousMistral = process.env.MISTRAL_API_KEY;
+    try {
+      process.env.GEMINI_API_KEY = "server-only-gemini-key";
+      delete process.env.MISTRAL_API_KEY;
+      expect(getConfiguredProviderKey("gemini")).toBe("server-only-gemini-key");
+      expect(() => getConfiguredProviderKey("mistral")).toThrowError(/MISTRAL_API_KEY/);
+      try { getConfiguredProviderKey("mistral"); } catch (error) {
+        expect(error).toMatchObject({ code: "AI_PROVIDER_NOT_CONFIGURED", status: 503 });
+        expect((error as Error).message).not.toContain("server-only-gemini-key");
+      }
+    } finally {
+      if (previousGemini === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = previousGemini;
+      if (previousMistral === undefined) delete process.env.MISTRAL_API_KEY; else process.env.MISTRAL_API_KEY = previousMistral;
+    }
+  });
+
   it("discovers Gemini generation models using the documented header, never a key in the URL", async () => {
     const key = "gemini-secret-test-key";
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ models: [
@@ -41,7 +62,7 @@ describe("BYOK provider adapters", () => {
     }
   });
 
-  it("keeps the BYOK key out of model request bodies and parses structured game output", async () => {
+  it("keeps provider credentials out of model prompts and parses structured game output", async () => {
     const key = "gemini-generation-key";
     const output = JSON.stringify({
       title: "Orb Garden",

@@ -18,6 +18,14 @@ describe("database migrations and health", () => {
     const applied = await query<{ version: string }>(`SELECT version FROM schema_migrations`);
     expect(applied.map((item) => item.version)).toContain("0001_core");
     expect(applied.map((item) => item.version)).toContain("0002_one_running_ai_generation_per_user");
+    expect(applied.map((item) => item.version)).toContain("0003_username_first_accounts_and_recovery_contacts");
+    expect(applied.map((item) => item.version)).toContain("0004_account_recovery_challenges");
+    expect(applied.map((item) => item.version)).toContain("0005_private_asset_uploads");
+    expect(applied.map((item) => item.version)).toContain("0006_versioned_project_asset_bindings");
+    expect(await query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'account_recovery_challenges'`)).toHaveLength(1);
+    expect(await query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'assets'`)).toHaveLength(1);
+    expect(await query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'project_asset_bindings'`)).toHaveLength(1);
+    expect(await query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'project_preview_grants'`)).toHaveLength(1);
     await ensureDatabase();
     expect(await query<{ version: string }>(`SELECT version FROM schema_migrations WHERE version = ?`, ["0001_core"])).toHaveLength(1);
   });
@@ -32,6 +40,11 @@ describe("database migrations and health", () => {
     );
     const found = await query<{ id: string; display_name: string }>(`SELECT id, display_name FROM users WHERE id = ?`, [id]);
     expect(found[0]).toMatchObject({ id, display_name: "Test Maker" });
+    await expect(execute(
+      `INSERT INTO users(id, username, display_name, email, password_hash, role, account_status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'user', 'active', ?, ?)`,
+      [newId(), `TEST_${id.slice(0, 8)}`, "Duplicate case", `${id}-case@local.invalid`, "bcrypt-hash-test-value", timestamp, timestamp],
+    )).rejects.toThrow();
     await execute(
       `INSERT INTO ai_generations(id, user_id, provider, model, status, started_at) VALUES (?, ?, 'gemini', 'test-model', 'running', ?)`,
       [newId(), id, timestamp],
