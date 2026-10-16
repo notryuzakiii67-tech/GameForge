@@ -290,7 +290,7 @@ export function Studio({ initialProjectId }: { initialProjectId?: string }) {
       setSelectedAssetIds([]);
       setAssetPickerOpen(false);
       const providerNotice = body.aiProvider?.fallbackFrom
-        ? ` Quota fallback: ${body.aiProvider.fallbackFrom} was rate-limited; this version was generated with ${body.aiProvider.usedName} (${body.aiProvider.model}). Your prompt may have been sent to more than one configured external provider.`
+        ? ` Quota fallback: ${providerOptions.find((item) => item.id === body.aiProvider.fallbackFrom)?.name ?? body.aiProvider.fallbackFrom} was rate-limited; this version was generated with ${body.aiProvider.usedName} (${body.aiProvider.model}). Your prompt may have been sent to more than one configured external provider.`
         : ` Generated with ${body.aiProvider?.usedName ?? selectedProvider.name} (${body.aiProvider?.model ?? model}).`;
       setNotice(`Version ${body.version.number} saved.${providerNotice} ${body.note}`);
       await loadHistory(body.project.id);
