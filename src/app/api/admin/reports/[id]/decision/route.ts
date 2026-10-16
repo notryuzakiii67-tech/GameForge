@@ -32,7 +32,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     const timestamp = nowIso();
     const removedTargets = input.takeDown
-      ? await takeDownReportedContent(report.target_type, report.target_id, timestamp)
+      ? await takeDownReportedContent(report.target_type, report.target_id, timestamp, actor.id, input.note ?? "")
       : [];
     const updated = await execute(
       `UPDATE reports SET status = ?, reviewed_at = ?, reviewer_id = ? WHERE id = ? AND status = 'open'`,

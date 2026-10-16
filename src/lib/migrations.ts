@@ -326,4 +326,31 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_project_preview_grants_project_version ON project_preview_grants(project_id, version_number, expires_at)`,
     ],
   },
+  {
+    version: "0007_asset_store_rights_and_review",
+    statements: [
+      `ALTER TABLE assets ADD COLUMN store_title TEXT NOT NULL DEFAULT ''`,
+      `ALTER TABLE assets ADD COLUMN public_description TEXT NOT NULL DEFAULT ''`,
+      `ALTER TABLE assets ADD COLUMN rights_basis TEXT`,
+      `ALTER TABLE assets ADD COLUMN download_authorized INTEGER NOT NULL DEFAULT 0 CHECK (download_authorized IN (0, 1))`,
+      `ALTER TABLE assets ADD COLUMN rights_declaration_at TEXT`,
+      `ALTER TABLE assets ADD COLUMN published_at TEXT`,
+      `ALTER TABLE assets ADD COLUMN reviewed_at TEXT`,
+      `ALTER TABLE assets ADD COLUMN reviewer_id TEXT REFERENCES users(id) ON DELETE SET NULL`,
+      `ALTER TABLE assets ADD COLUMN moderation_note TEXT NOT NULL DEFAULT ''`,
+      `CREATE INDEX IF NOT EXISTS idx_assets_store_status ON assets(publication_status, upload_status, published_at)`,
+      `CREATE TABLE IF NOT EXISTS asset_moderation_events (
+        id TEXT PRIMARY KEY,
+        asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        action TEXT NOT NULL CHECK (action IN ('submitted', 'approved', 'rejected', 'withdrawn', 'removed')),
+        from_status TEXT NOT NULL,
+        to_status TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        details_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_asset_moderation_events_asset ON asset_moderation_events(asset_id, created_at DESC)`,
+    ],
+  },
 ];

@@ -4,13 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Bell, ChevronDown, Compass, Flame, Gamepad2, Grid2X2, Hammer, Library, Menu, Search, Sparkles, X,
+  Bell, ChevronDown, Compass, FileBox, Flame, Gamepad2, Grid2X2, Hammer, Library, Menu, Search, Sparkles, X,
 } from "lucide-react";
 import type { PublicUser } from "@/lib/auth";
 
 const navigation = [
   { href: "/", label: "Discover", icon: Compass },
   { href: "/games", label: "Games", icon: Gamepad2 },
+  { href: "/asset-store", label: "Asset Store", icon: FileBox },
   { href: "/studio", label: "AI Studio", icon: Sparkles, featured: true },
   { href: "/developers", label: "Developers", icon: Hammer },
   { href: "/jams", label: "Game Jams", icon: Flame },
@@ -104,7 +105,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <footer className="site-footer">
       <div className="footer-main">
         <div className="footer-brand"><Link className="brand" href="/"><span className="brand-mark"><Hammer size={17} /></span><span className="brand-name">gameforge<span className="brand-period">.</span></span></Link><p>Play. Create. Publish. Discover.<br />A home for small games and big ideas.</p></div>
-        <div className="footer-links"><div><strong>Explore</strong><Link href="/games">Games</Link><Link href="/ai-gallery">AI creations</Link><Link href="/collections">Collections</Link></div><div><strong>Create</strong><Link href="/studio">AI Studio</Link><Link href="/assets">Asset Studio</Link><Link href="/dashboard">Creator dashboard</Link><Link href="/developers">Developers</Link></div><div><strong>GameForge</strong><Link href="/about">About</Link><Link href="/settings">Settings</Link><a href="https://github.com/notryuzakiii67-tech/GameForge" target="_blank" rel="noreferrer">Source ↗</a></div></div>
+        <div className="footer-links"><div><strong>Explore</strong><Link href="/games">Games</Link><Link href="/asset-store">Asset Store</Link><Link href="/ai-gallery">AI creations</Link><Link href="/collections">Collections</Link></div><div><strong>Create</strong><Link href="/studio">AI Studio</Link><Link href="/assets">Asset Studio</Link><Link href="/dashboard">Creator dashboard</Link><Link href="/developers">Developers</Link></div><div><strong>GameForge</strong><Link href="/about">About</Link><Link href="/settings">Settings</Link><a href="https://github.com/notryuzakiii67-tech/GameForge" target="_blank" rel="noreferrer">Source ↗</a></div></div>
       </div>
       <div className="footer-bottom"><span>© {new Date().getFullYear()} GameForge · Built for the browser</span><span className="footer-note"><span className="status-dot" /> Demo content is labeled</span></div>
     </footer>

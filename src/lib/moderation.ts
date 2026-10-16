@@ -1,5 +1,6 @@
 import { execute, newId, query, transaction } from "@/lib/db";
 import { ApiError } from "@/lib/http";
+import { removeAssetFromStore } from "@/lib/asset-store";
 
 export async function setAccountStatus(actorId: string, targetId: string, status: "active" | "suspended", timestamp: string, note: string): Promise<void> {
   if (actorId === targetId) throw new ApiError(409, "SELF_MODERATION_BLOCKED", "You cannot change your own account status.");
@@ -45,7 +46,7 @@ export async function setAccountStatus(actorId: string, targetId: string, status
   });
 }
 
-export async function takeDownReportedContent(targetType: string, targetId: string, timestamp: string): Promise<string[]> {
+export async function takeDownReportedContent(targetType: string, targetId: string, timestamp: string, actorId: string | null = null, note = ""): Promise<string[]> {
   if (targetType === "game") {
     const games = await query<{ id: string; source_project_id: string | null; status: string; is_demo: number }>(
       `SELECT id, source_project_id, status, is_demo FROM games WHERE id = ? LIMIT 1`, [targetId]);
@@ -89,5 +90,10 @@ export async function takeDownReportedContent(targetType: string, targetId: stri
     return removed;
   }
 
-  throw new ApiError(400, "TAKEDOWN_NOT_SUPPORTED", "Content takedowns apply only to games and AI projects. Use site-admin account controls to act on a user report.");
+  if (targetType === "asset") {
+    await removeAssetFromStore(targetId, actorId, note, true);
+    return [`asset:${targetId}`];
+  }
+
+  throw new ApiError(400, "TAKEDOWN_NOT_SUPPORTED", "Content takedowns apply only to games, AI projects, and public store assets. Use site-admin account controls to act on a user report.");
 }

@@ -5,7 +5,7 @@ import { ApiError, assertSameOrigin, enforceRateLimit, errorResponse, readJson, 
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const schema = z.object({ targetType: z.enum(["game", "ai_project", "user"]), targetId: z.string().uuid(), reason: z.enum(["copyright", "unsafe", "spam", "harassment", "other"]), details: z.string().trim().max(1000).default("") });
+const schema = z.object({ targetType: z.enum(["game", "ai_project", "user", "asset"]), targetId: z.string().uuid(), reason: z.enum(["copyright", "unsafe", "spam", "harassment", "other"]), details: z.string().trim().max(1000).default("") });
 
 export async function POST(request: Request) {
   try {
@@ -14,8 +14,10 @@ export async function POST(request: Request) {
     await enforceRateLimit(request, `report:${user.id}`, 6, 60 * 60 * 1000);
     const input = await readJson(request, schema);
     requireUuid(input.targetId, "report target");
-    const targetTable = input.targetType === "game" ? "games" : input.targetType === "ai_project" ? "ai_projects" : "users";
-    const rows = await query<{ id: string }>(`SELECT id FROM ${targetTable} WHERE id = ? LIMIT 1`, [input.targetId]);
+    const targetTable = input.targetType === "game" ? "games" : input.targetType === "ai_project" ? "ai_projects" : input.targetType === "user" ? "users" : "assets";
+    const rows = input.targetType === "asset"
+      ? await query<{ id: string }>(`SELECT a.id FROM assets a JOIN users u ON u.id = a.owner_id WHERE a.id = ? AND a.publication_status = 'published' AND a.upload_status = 'ready' AND a.validation_state = 'valid_compatible' AND a.rights_confirmed = 1 AND a.download_authorized = 1 AND a.rights_declaration_at IS NOT NULL AND TRIM(a.attribution) <> '' AND a.rights_basis IN ('created_by_me', 'licensed_for_redistribution', 'public_domain') AND a.license IN ('cc-by-4.0', 'cc-by-sa-4.0', 'cc0-1.0') AND a.deleted_at IS NULL AND u.account_status = 'active' LIMIT 1`, [input.targetId])
+      : await query<{ id: string }>(`SELECT id FROM ${targetTable} WHERE id = ? LIMIT 1`, [input.targetId]);
     if (!rows.length) throw new ApiError(404, "REPORT_TARGET_NOT_FOUND", "That content is no longer available.");
     const duplicate = await query<{ id: string }>(`SELECT id FROM reports WHERE reporter_id = ? AND target_type = ? AND target_id = ? AND status = 'open' LIMIT 1`, [user.id, input.targetType, input.targetId]);
     if (duplicate.length) throw new ApiError(409, "REPORT_ALREADY_OPEN", "You already have an open report for this item.");

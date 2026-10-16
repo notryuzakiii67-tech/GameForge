@@ -87,7 +87,7 @@ async function activeBindingIds(
     `SELECT b.asset_id FROM project_asset_bindings b
      JOIN assets a ON a.id = b.asset_id AND a.owner_id = b.owner_id
      WHERE b.owner_id = ? AND b.project_id = ? AND b.version_number = ?
-       AND a.upload_status = 'ready' AND a.publication_status = 'private' AND a.deleted_at IS NULL
+       AND a.upload_status = 'ready' AND a.publication_status IN ('private', 'pending_review', 'published', 'rejected', 'removed') AND a.deleted_at IS NULL
      ORDER BY b.created_at, b.asset_id`,
     [ownerId, projectId, versionNumber],
   );
@@ -117,7 +117,7 @@ export async function bindPrivateAssetsToVersionInTransaction(
   for (const assetId of distinctIds) {
     const assets = await tx.query<{ id: string }>(
       `SELECT id FROM assets WHERE id = ? AND owner_id = ? AND upload_status = 'ready'
-       AND publication_status = 'private' AND deleted_at IS NULL LIMIT 1`,
+       AND publication_status IN ('private', 'pending_review', 'published', 'rejected', 'removed') AND deleted_at IS NULL LIMIT 1`,
       [assetId, ownerId],
     );
     if (!assets[0]) throw new ApiError(404, "ASSET_NOT_FOUND", "One or more selected private assets could not be found.");
@@ -158,7 +158,7 @@ export async function getProjectVersionAssetIds(ownerId: string, projectId: stri
      JOIN ai_projects p ON p.id = b.project_id AND p.owner_id = b.owner_id
      JOIN assets a ON a.id = b.asset_id AND a.owner_id = b.owner_id
      WHERE b.owner_id = ? AND b.project_id = ? AND b.version_number = ?
-       AND a.upload_status = 'ready' AND a.publication_status = 'private' AND a.deleted_at IS NULL
+       AND a.upload_status = 'ready' AND a.publication_status IN ('private', 'pending_review', 'published', 'rejected', 'removed') AND a.deleted_at IS NULL
      ORDER BY b.created_at, b.asset_id`,
     [ownerId, projectId, versionNumber],
   );
@@ -184,7 +184,7 @@ export async function getProjectAssetBindings(
      JOIN ai_projects p ON p.id = b.project_id AND p.owner_id = b.owner_id
      JOIN assets a ON a.id = b.asset_id AND a.owner_id = b.owner_id
      WHERE b.owner_id = ? AND b.project_id = ? AND b.version_number = ?
-       AND a.upload_status = 'ready' AND a.publication_status = 'private' AND a.deleted_at IS NULL
+       AND a.upload_status = 'ready' AND a.publication_status IN ('private', 'pending_review', 'published', 'rejected', 'removed') AND a.deleted_at IS NULL
      ORDER BY b.created_at, b.asset_id`,
     [ownerId, projectId, version],
   );
@@ -202,7 +202,7 @@ export async function getOwnedProjectAssetRecords(
      JOIN ai_projects p ON p.id = b.project_id AND p.owner_id = b.owner_id
      JOIN assets a ON a.id = b.asset_id AND a.owner_id = b.owner_id
      WHERE b.owner_id = ? AND p.owner_id = ? AND b.project_id = ? AND b.version_number = ?
-       AND a.upload_status = 'ready' AND a.publication_status = 'private' AND a.deleted_at IS NULL
+       AND a.upload_status = 'ready' AND a.publication_status IN ('private', 'pending_review', 'published', 'rejected', 'removed') AND a.deleted_at IS NULL
      ORDER BY b.created_at, b.asset_id`,
     [ownerId, ownerId, projectId, versionNumber],
   );
@@ -221,7 +221,7 @@ export async function getBoundProjectAssetForPreview(
      JOIN ai_projects p ON p.id = b.project_id AND p.owner_id = b.owner_id
      JOIN assets a ON a.id = b.asset_id AND a.owner_id = b.owner_id
      WHERE b.owner_id = ? AND p.owner_id = ? AND b.project_id = ? AND b.version_number = ? AND b.asset_id = ?
-       AND a.upload_status = 'ready' AND a.publication_status = 'private' AND a.deleted_at IS NULL LIMIT 1`,
+       AND a.upload_status = 'ready' AND a.publication_status IN ('private', 'pending_review', 'published', 'rejected', 'removed') AND a.deleted_at IS NULL LIMIT 1`,
     [ownerId, ownerId, projectId, versionNumber, assetId],
   );
   if (!rows[0]) throw new ApiError(404, "PROJECT_ASSET_NOT_FOUND", "That asset is not bound to this project version.");
@@ -263,7 +263,7 @@ export async function changeProjectAssetBindings(
       for (const assetId of distinctIds) {
         const rows = await tx.query<{ id: string }>(
           `SELECT id FROM assets WHERE id = ? AND owner_id = ? AND upload_status = 'ready'
-           AND publication_status = 'private' AND deleted_at IS NULL LIMIT 1`, [assetId, ownerId]);
+           AND publication_status IN ('private', 'pending_review', 'published', 'rejected', 'removed') AND deleted_at IS NULL LIMIT 1`, [assetId, ownerId]);
         if (!rows[0]) throw new ApiError(404, "ASSET_NOT_FOUND", "One or more selected private assets could not be found.");
       }
       nextIds = [...new Set([...currentIds, ...distinctIds])];
@@ -360,7 +360,7 @@ export async function isPrivateAssetBoundToProjectVersion(
      JOIN ai_projects p ON p.id = b.project_id AND p.owner_id = b.owner_id
      JOIN assets a ON a.id = b.asset_id AND a.owner_id = b.owner_id
      WHERE b.owner_id = ? AND p.owner_id = ? AND b.project_id = ? AND b.version_number = ? AND b.asset_id = ?
-       AND a.upload_status = 'ready' AND a.publication_status = 'private' AND a.deleted_at IS NULL LIMIT 1`,
+       AND a.upload_status = 'ready' AND a.publication_status IN ('private', 'pending_review', 'published', 'rejected', 'removed') AND a.deleted_at IS NULL LIMIT 1`,
     [ownerId, ownerId, projectId, versionNumber, assetId],
   );
   return Boolean(rows[0]);

@@ -24,6 +24,15 @@ type AssetRow = {
   publication_status: "private" | "pending_review" | "published" | "rejected" | "removed";
   validation_state: string;
   validation_json: string;
+  store_title: string;
+  public_description: string;
+  license: string | null;
+  rights_confirmed: number;
+  rights_basis: string | null;
+  download_authorized: number;
+  attribution: string;
+  moderation_note: string;
+  published_at: string | null;
   upload_expires_at: string | null;
   deleted_at: string | null;
   created_at: string;
@@ -42,6 +51,16 @@ export type PrivateAssetSummary = {
   validation: Record<string, unknown>;
   createdAt: string;
   previewUrl: string;
+  publicationStatus: AssetRow["publication_status"];
+  storeTitle: string;
+  publicDescription: string;
+  license: string | null;
+  rightsBasis: string | null;
+  rightsConfirmed: boolean;
+  downloadAuthorized: boolean;
+  attribution: string;
+  moderationNote: string;
+  publishedAt: string | null;
 };
 
 function stagingStorageKey(ownerId: string, assetId: string): string {
@@ -90,6 +109,16 @@ function summarize(asset: AssetRow): PrivateAssetSummary {
     validation: parseValidationJson(asset.validation_json),
     createdAt: asset.created_at,
     previewUrl: `/api/assets/${encodeURIComponent(asset.id)}/file`,
+    publicationStatus: asset.publication_status,
+    storeTitle: asset.store_title ?? "",
+    publicDescription: asset.public_description ?? "",
+    license: asset.license,
+    rightsBasis: asset.rights_basis,
+    rightsConfirmed: asset.rights_confirmed === 1,
+    downloadAuthorized: asset.download_authorized === 1,
+    attribution: asset.attribution ?? "",
+    moderationNote: asset.moderation_note ?? "",
+    publishedAt: asset.published_at,
   };
 }
 
@@ -97,6 +126,7 @@ async function requireOwnedAsset(userId: string, assetId: string): Promise<Asset
   const rows = await query<AssetRow>(
     `SELECT id, owner_id, project_id, original_name, extension, format, category, mime_type, size_bytes,
             content_hash, storage_key, upload_status, publication_status, validation_state, validation_json,
+            store_title, public_description, license, rights_confirmed, rights_basis, download_authorized, attribution, moderation_note, published_at,
             upload_expires_at, deleted_at, created_at
      FROM assets WHERE id = ? AND owner_id = ? AND deleted_at IS NULL LIMIT 1`, [assetId, userId]);
   if (!rows[0]) throw new ApiError(404, "ASSET_NOT_FOUND", "That private asset could not be found.");
@@ -234,24 +264,25 @@ export async function listPrivateAssets(userId: string): Promise<PrivateAssetSum
   const assets = await query<AssetRow>(
     `SELECT id, owner_id, project_id, original_name, extension, format, category, mime_type, size_bytes,
             content_hash, storage_key, upload_status, publication_status, validation_state, validation_json,
+            store_title, public_description, license, rights_confirmed, rights_basis, download_authorized, attribution, moderation_note, published_at,
             upload_expires_at, deleted_at, created_at
-     FROM assets WHERE owner_id = ? AND upload_status = 'ready' AND publication_status = 'private' AND deleted_at IS NULL
+     FROM assets WHERE owner_id = ? AND upload_status = 'ready' AND deleted_at IS NULL
      ORDER BY created_at DESC LIMIT 500`, [userId]);
   return assets.map(summarize);
 }
 
 export async function getPrivateAsset(userId: string, assetId: string): Promise<PrivateAssetSummary & { storageKey: string }> {
   const asset = await requireOwnedAsset(userId, assetId);
-  if (asset.upload_status !== "ready" || asset.publication_status !== "private") throw new ApiError(404, "ASSET_NOT_FOUND", "That private asset could not be found.");
+  if (asset.upload_status !== "ready") throw new ApiError(404, "ASSET_NOT_FOUND", "That owned asset is not available.");
   return { ...summarize(asset), storageKey: asset.storage_key };
 }
 
 export async function deletePrivateAsset(userId: string, assetId: string): Promise<{ storageCleanupPending: boolean }> {
   const asset = await requireOwnedAsset(userId, assetId);
-  if (asset.publication_status !== "private") throw new ApiError(409, "ASSET_NOT_PRIVATE", "Only private assets can be deleted from this library.");
+  if (!["private", "rejected", "removed"].includes(asset.publication_status)) throw new ApiError(409, "ASSET_NOT_PRIVATE", "Withdraw an asset awaiting review or currently published before deleting it.");
   const timestamp = nowIso();
   const changed = await transaction(async (tx) => {
-    const updated = await tx.execute(`UPDATE assets SET deleted_at = ?, upload_status = 'failed', updated_at = ? WHERE id = ? AND owner_id = ? AND deleted_at IS NULL AND publication_status = 'private'`, [timestamp, timestamp, assetId, userId]);
+    const updated = await tx.execute(`UPDATE assets SET deleted_at = ?, upload_status = 'failed', updated_at = ? WHERE id = ? AND owner_id = ? AND deleted_at IS NULL AND publication_status IN ('private', 'rejected', 'removed')`, [timestamp, timestamp, assetId, userId]);
     if (updated) await tx.execute(`DELETE FROM project_asset_bindings WHERE asset_id = ? AND owner_id = ?`, [assetId, userId]);
     return updated;
   });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle, ArrowDownToLine, ArrowLeft, AudioLines, Check, FileBox, Image as ImageIcon, LoaderCircle,
   LockKeyhole, Plus, Trash2, Upload, WandSparkles,
@@ -22,6 +22,16 @@ type Asset = {
   validation: Record<string, unknown>;
   createdAt: string;
   previewUrl: string;
+  publicationStatus: "private" | "pending_review" | "published" | "rejected" | "removed";
+  storeTitle: string;
+  publicDescription: string;
+  license: string | null;
+  rightsBasis: "created_by_me" | "licensed_for_redistribution" | "public_domain" | null;
+  rightsConfirmed: boolean;
+  downloadAuthorized: boolean;
+  attribution: string;
+  moderationNote: string;
+  publishedAt: string | null;
 };
 type ApiErrorBody = { error?: { message?: string; code?: string } };
 type CategoryFilter = "all" | Asset["category"];
@@ -72,6 +82,15 @@ export function AssetStudio() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  const [storeBusy, setStoreBusy] = useState(false);
+  const [storeFormOpen, setStoreFormOpen] = useState(false);
+  const [storeTitle, setStoreTitle] = useState("");
+  const [storeDescription, setStoreDescription] = useState("");
+  const [storeAttribution, setStoreAttribution] = useState("");
+  const [storeLicense, setStoreLicense] = useState<"cc-by-4.0" | "cc-by-sa-4.0" | "cc0-1.0">("cc-by-4.0");
+  const [rightsBasis, setRightsBasis] = useState<"created_by_me" | "licensed_for_redistribution" | "public_domain">("created_by_me");
+  const [rightsConfirmed, setRightsConfirmed] = useState(false);
+  const [downloadAuthorized, setDownloadAuthorized] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -88,6 +107,17 @@ export function AssetStudio() {
   }, []);
 
   useEffect(() => { if (user) void refreshAssets(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [user?.id]);
+  useEffect(() => {
+    if (!selected) return;
+    setStoreTitle(selected.storeTitle || selected.filename.replace(/\.[^.]+$/, ""));
+    setStoreDescription(selected.publicDescription || "");
+    setStoreAttribution(selected.attribution || `@${user?.username ?? "creator"}`);
+    setStoreLicense(selected.license === "cc-by-sa-4.0" || selected.license === "cc0-1.0" ? selected.license : "cc-by-4.0");
+    setRightsBasis(selected.rightsBasis ?? "created_by_me");
+    setRightsConfirmed(false);
+    setDownloadAuthorized(false);
+    setStoreFormOpen(false);
+  }, [selectedId, user?.id]);
 
   async function refreshAssets() {
     setLoadingAssets(true);
@@ -147,7 +177,7 @@ export function AssetStudio() {
   }
 
   async function deleteSelected() {
-    if (!selected || !window.confirm(`Permanently delete “${selected.filename}” from your private library?`)) return;
+    if (!selected || !window.confirm(`Permanently delete “${selected.filename}” from your library?`)) return;
     setError("");
     setNotice("");
     setDeleting(true);
@@ -157,9 +187,40 @@ export function AssetStudio() {
       const result = await response.json() as { storageCleanupPending?: boolean };
       setAssets((current) => current.filter((asset) => asset.id !== selected.id));
       setSelectedId("");
-      setNotice(result.storageCleanupPending ? "Access to this asset was revoked, but object-storage cleanup is pending. Contact the site operator if it remains." : "The private asset and stored objects were deleted.");
+      setNotice(result.storageCleanupPending ? "Access to this asset was revoked, but object-storage cleanup is pending. Contact the site operator if it remains." : "The asset and stored objects were deleted.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "The asset could not be deleted."); }
     finally { setDeleting(false); }
+  }
+
+  async function submitToStore(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected) return;
+    setError(""); setNotice(""); setStoreBusy(true);
+    try {
+      const response = await fetch(`/api/assets/${encodeURIComponent(selected.id)}/store`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: storeTitle, description: storeDescription, attribution: storeAttribution, license: storeLicense, rightsBasis, rightsConfirmed, downloadAuthorized }),
+      });
+      if (!response.ok) throw new Error(await responseError(response));
+      const result = await response.json() as { message?: string };
+      setStoreFormOpen(false);
+      setNotice(result.message || "The asset was submitted for moderator review.");
+      await refreshAssets();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "The asset could not be submitted."); }
+    finally { setStoreBusy(false); }
+  }
+
+  async function withdrawFromStore() {
+    if (!selected || !window.confirm("Withdraw this asset from the public store? Copies already downloaded remain subject to the selected license.")) return;
+    setError(""); setNotice(""); setStoreBusy(true);
+    try {
+      const response = await fetch(`/api/assets/${encodeURIComponent(selected.id)}/store`, { method: "DELETE" });
+      if (!response.ok) throw new Error(await responseError(response));
+      const result = await response.json() as { message?: string };
+      setNotice(result.message || "The asset was withdrawn from the public store.");
+      await refreshAssets();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "The asset could not be withdrawn."); }
+    finally { setStoreBusy(false); }
   }
 
   if (authLoading) return <div className="page-wrap page-content"><div className="studio-loading panel-card"><LoaderCircle className="spin" size={20} /> Opening your private asset library…</div></div>;
@@ -172,6 +233,9 @@ export function AssetStudio() {
   const modelCounts = selected?.category === "model"
     ? ["meshes", "nodes", "animations", "materials"].filter((key) => typeof details[key] === "number").map((key) => `${details[key]} ${key}`)
     : [];
+  const canDeleteSelected = Boolean(selected && ["private", "rejected", "removed"].includes(selected.publicationStatus));
+  const canWithdrawSelected = Boolean(selected && ["pending_review", "published"].includes(selected.publicationStatus));
+  const canSubmitSelected = Boolean(selected && ["private", "rejected"].includes(selected.publicationStatus));
 
   return <main className="page-wrap page-content asset-studio-page">
     <div className="studio-topbar asset-studio-topbar">
@@ -191,7 +255,7 @@ export function AssetStudio() {
         {loadingAssets ? <div className="asset-library-empty"><LoaderCircle size={16} className="spin" /> Loading your private files…</div>
           : visibleAssets.length ? <div className="asset-library-list">{visibleAssets.map((asset) => <button key={asset.id} className={`asset-library-item${selected?.id === asset.id ? " active" : ""}`} onClick={() => setSelectedId(asset.id)}>
             <span className={`asset-type-icon asset-type-${asset.category}`}>{asset.category === "image" ? <ImageIcon size={16} /> : asset.category === "model" ? <FileBox size={16} /> : <AudioLines size={16} />}</span>
-            <span className="asset-library-item-text"><strong title={asset.filename}>{asset.filename}</strong><small>{asset.format} · {formatBytes(asset.sizeBytes)}</small></span><Check className="asset-selected-check" size={14} />
+            <span className="asset-library-item-text"><strong title={asset.filename}>{asset.filename}</strong><small>{asset.format} · {formatBytes(asset.sizeBytes)} · {asset.publicationStatus.replaceAll("_", " ")}</small></span><Check className="asset-selected-check" size={14} />
           </button>)}</div>
           : <div className="asset-library-empty"><span className="asset-empty-icon"><FileBox size={19} /></span><strong>{filter === "all" ? "Your library is empty" : `No ${filter} assets yet`}</strong><span>Upload an image, self-contained GLB/glTF model, WAV, or OGG file. Everything stays private.</span><button className="button button-outline button-small" onClick={() => fileRef.current?.click()} disabled={uploading}><Plus size={13} /> Upload your first asset</button></div>}
         <div className="asset-format-note"><strong>Accepted:</strong> PNG, JPEG, WebP, GLB, self-contained glTF, WAV, OGG. OBJ/FBX, SVG, video, archives, and external model resources are not accepted.</div>
@@ -199,17 +263,38 @@ export function AssetStudio() {
 
       <section className="asset-detail-panel panel-card" aria-label="Selected asset details">
         {selected ? <>
-          <div className="asset-detail-heading"><div><div className="eyebrow">{selected.category.toUpperCase()} · VALIDATED PRIVATE FILE</div><h2 title={selected.filename}>{selected.filename}</h2><span>{selected.format} · {formatBytes(selected.sizeBytes)} · Uploaded {new Date(selected.createdAt).toLocaleString()}</span></div><div className="asset-detail-actions"><a className="button button-dark button-small" href={selected.previewUrl} download={selected.filename}><ArrowDownToLine size={12} /> Download</a><button className="button button-outline button-small asset-delete-button" onClick={deleteSelected} disabled={deleting}><Trash2 size={13} /> {deleting ? "Deleting…" : "Delete"}</button></div></div>
+          <div className="asset-detail-heading"><div><div className="eyebrow">{selected.category.toUpperCase()} · {selected.publicationStatus.replaceAll("_", " ").toUpperCase()}</div><h2 title={selected.filename}>{selected.filename}</h2><span>{selected.format} · {formatBytes(selected.sizeBytes)} · Uploaded {new Date(selected.createdAt).toLocaleString()}</span></div><div className="asset-detail-actions"><a className="button button-dark button-small" href={selected.previewUrl} download={selected.filename}><ArrowDownToLine size={12} /> Download</a>{canWithdrawSelected && <button className="button button-outline button-small" onClick={withdrawFromStore} disabled={storeBusy}>Withdraw from store</button>}{canDeleteSelected && <button className="button button-outline button-small asset-delete-button" onClick={deleteSelected} disabled={deleting}><Trash2 size={13} /> {deleting ? "Deleting…" : "Delete"}</button>}</div></div>
           <div className="asset-preview-shell">
             {selected.category === "image" && <img className="asset-image-preview" src={selected.previewUrl} alt={`Private preview of ${selected.filename}`} />}
             {selected.category === "model" && <AssetPreview key={selected.id} url={selected.previewUrl} label={selected.filename} />}
             {selected.category === "audio" && <div className="asset-audio-preview"><AudioLines size={35} /><strong>{selected.filename}</strong><span>{duration ? `${duration.toFixed(2)} seconds · ` : ""}{formatBytes(selected.sizeBytes)}</span><audio src={selected.previewUrl} controls preload="metadata">Your browser does not support the audio preview.</audio></div>}
           </div>
           <div className="asset-metadata-grid"><div><small>File format</small><strong>{selected.format}</strong></div><div><small>Category</small><strong>{selected.category}</strong></div><div><small>Validated size</small><strong>{formatBytes(selected.sizeBytes)}</strong></div>{width && height && <div><small>Dimensions</small><strong>{width} × {height} px</strong></div>}{modelCounts.length > 0 && <div><small>Model structure</small><strong>{modelCounts.join(" · ")}</strong></div>}{duration && <div><small>Duration</small><strong>{duration.toFixed(2)} s</strong></div>}<div><small>Content validation</small><strong className="asset-valid-state"><Check size={12} /> {selected.validationState.replaceAll("_", " ")}</strong></div></div>
-          <div className="asset-privacy-note"><LockKeyhole size={14} /><div><strong>Private, not published</strong><span>File bytes remain private and are not sent to AI. Only filenames and validation metadata you explicitly attach as prompt context may be shared; nothing is published.</span></div></div>
+          <div className="asset-privacy-note"><LockKeyhole size={14} /><div><strong>{selected.publicationStatus === "published" ? "Publicly downloadable under its license" : selected.publicationStatus === "pending_review" ? "Private while awaiting moderator review" : selected.publicationStatus === "removed" ? "Removed from public access" : "Private, not published"}</strong><span>{selected.publicationStatus === "published" ? `This file can be downloaded by anyone under ${selected.license ?? "its declared license"}. Existing copies remain subject to that license if you withdraw it.` : "Your file stays private unless you submit it and a moderator approves it. Private file bytes are not sent to AI; only filenames and validated metadata you explicitly attach as prompt context may be shared."}</span></div></div>
+          {selected.moderationNote && <div className="notice notice-info asset-moderation-note"><strong>Moderator note:</strong> {selected.moderationNote}</div>}
+          <section className="asset-store-submission panel-card" aria-label="Public Asset Store submission">
+            <div className="asset-store-submission-head"><div><div className="eyebrow">COMMUNITY ASSET STORE</div><h3>Publish with permission</h3><p>Every listing requires a rights declaration, attribution, a public license, explicit download authorization, and moderator approval.</p></div>{selected.publicationStatus === "published" && <Link href="/asset-store" className="button button-dark button-small">View listing</Link>}</div>
+            {selected.publicationStatus === "pending_review" && <p className="asset-store-status-copy">In the review queue. The listing and download are not public yet.</p>}
+            {selected.publicationStatus === "published" && <p className="asset-store-status-copy">Published {selected.publishedAt ? new Date(selected.publishedAt).toLocaleString() : ""}. Withdraw anytime; previously downloaded copies remain subject to the license.</p>}
+            {selected.publicationStatus === "removed" && <p className="asset-store-status-copy">This asset was removed from public access. Contact the moderation team if you believe this was in error.</p>}
+            {canSubmitSelected && !storeFormOpen && <button className="button button-primary button-small" onClick={() => { setRightsConfirmed(false); setDownloadAuthorized(false); setStoreFormOpen(true); }}>Submit for public review</button>}
+            {canSubmitSelected && storeFormOpen && <form className="asset-store-rights-form" onSubmit={submitToStore}>
+              <div className="field"><label htmlFor="store-asset-title">Store title</label><input id="store-asset-title" className="text-input" value={storeTitle} onChange={(event) => setStoreTitle(event.target.value)} maxLength={100} minLength={2} required /></div>
+              <div className="field"><label htmlFor="store-asset-description">Description</label><textarea id="store-asset-description" className="text-area" value={storeDescription} onChange={(event) => setStoreDescription(event.target.value)} maxLength={700} placeholder="Describe the asset and permitted uses." /></div>
+              <div className="field"><label htmlFor="store-asset-attribution">Required attribution</label><input id="store-asset-attribution" className="text-input" value={storeAttribution} onChange={(event) => setStoreAttribution(event.target.value)} maxLength={300} minLength={2} placeholder="Creator or source attribution shown with every listing" required /></div>
+              <div className="asset-store-form-grid">
+                <div className="field"><label htmlFor="store-asset-license">Public download license</label><select id="store-asset-license" className="select-input" value={storeLicense} onChange={(event) => setStoreLicense(event.target.value as typeof storeLicense)}><option value="cc-by-4.0">CC BY 4.0 · Attribution</option><option value="cc-by-sa-4.0">CC BY-SA 4.0 · Attribution + ShareAlike</option><option value="cc0-1.0">CC0 1.0 · Public domain dedication</option></select></div>
+                <div className="field"><label htmlFor="store-asset-rights">Basis for your rights</label><select id="store-asset-rights" className="select-input" value={rightsBasis} onChange={(event) => setRightsBasis(event.target.value as typeof rightsBasis)}><option value="created_by_me">I created/own this asset</option><option value="licensed_for_redistribution">I have redistribution authorization</option><option value="public_domain">I verified it is public domain</option></select></div>
+              </div>
+              <label className="checkbox-row asset-rights-check"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} required /> I confirm that I own the necessary rights, have documented authorization, or verified public-domain status; I may apply the selected license, and the file contains no material that I am not authorized to redistribute.</label>
+              <label className="checkbox-row asset-rights-check"><input type="checkbox" checked={downloadAuthorized} onChange={(event) => setDownloadAuthorized(event.target.checked)} required /> I explicitly authorize public listing and downloads under this license. I understand that downloaded copies can remain in circulation under the license after withdrawal.</label>
+              <p className="asset-rights-disclaimer">Submissions stay private until a moderator reviews them. Review does not independently verify ownership or replace legal advice. Do not submit assets unless you can authorize redistribution under the selected license.</p>
+              <div className="form-actions"><button className="button button-primary button-small" disabled={storeBusy}>{storeBusy ? "Submitting…" : "Confirm declarations & submit"}</button><button className="button button-dark button-small" type="button" onClick={() => setStoreFormOpen(false)} disabled={storeBusy}>Cancel</button></div>
+            </form>}
+          </section>
         </> : <div className="asset-detail-empty"><span><FileBox size={22} /></span><h2>Select a private asset</h2><p>Validated uploads can be previewed here. Image and audio files use the browser’s safe built-in viewers; GLB/glTF models use the locally bundled Three.js renderer.</p><button className="button button-primary" onClick={() => fileRef.current?.click()} disabled={uploading}><Upload size={14} /> Upload an asset</button></div>}
       </section>
     </div>
-    <section className="asset-studio-footnote"><WandSparkles size={14} /><p><strong>Current scope:</strong> This page securely uploads and previews private assets; AI image/model generation is not available. In AI Studio, selected assets can be bound to an immutable project version and referenced with a `gameforge-asset://UUID` placeholder. Only filenames and validated metadata—not private bytes—are sent to AI. Preview delivery uses a short-lived project/version-scoped grant. Public Asset Store sharing and redistribution rights review are not implemented.</p></section>
+    <section className="asset-studio-footnote"><WandSparkles size={14} /><p><strong>Asset safety:</strong> Private uploads remain private by default. Asset Store submissions require an explicit rights basis, attribution, a supported public license, download authorization, and moderator approval; declarations are self-attested and do not replace legal review. Downloads are served as attachments, and withdrawn or removed listings stop being served. AI image/model generation is not available. In AI Studio, selected assets can be bound to an immutable project version and referenced with a `gameforge-asset://UUID` placeholder; only filenames and validated metadata—not private bytes—are sent to AI.</p></section>
   </main>;
 }
