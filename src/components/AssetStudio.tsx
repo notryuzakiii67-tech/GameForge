@@ -274,7 +274,7 @@ export function AssetStudio() {
   const canSubmitSelected = Boolean(selected && !selected.importSource && ["private", "rejected"].includes(selected.publicationStatus) && selected.appeal?.status !== "open");
   const selectedUsageGuide = selected ? assetUsageGuide(selected.category, selected.format, selected.id) : null;
 
-  return <main className="page-wrap page-content asset-studio-page">
+  return <div className="page-wrap page-content asset-studio-page">
     <div className="studio-topbar asset-studio-topbar">
       <div className="studio-topbar-title"><Link href="/studio" className="studio-back" aria-label="Back to AI Studio"><ArrowLeft size={15} /></Link><div><h1>Asset Studio</h1><span>Private library · {assets.length} {assets.length === 1 ? "asset" : "assets"}</span></div><span className="asset-private-pill"><LockKeyhole size={11} /> PRIVATE BY DEFAULT</span></div>
       <div className="studio-top-actions"><Link href="/studio" className="button button-dark button-small"><WandSparkles size={13} /> Open AI Game Studio</Link><button className="button button-primary button-small" onClick={() => fileRef.current?.click()} disabled={uploading}><Upload size={13} /> Add asset</button></div>
@@ -285,8 +285,8 @@ export function AssetStudio() {
     <div className="asset-studio-layout">
       <aside className="asset-library-panel panel-card">
         <div className="asset-library-heading"><div><div className="eyebrow"><LockKeyhole size={12} /> YOUR PRIVATE LIBRARY</div><h2>Assets</h2></div><button className="icon-button" onClick={() => void refreshAssets()} disabled={loadingAssets} aria-label="Refresh assets"><LoaderCircle size={14} className={loadingAssets ? "spin" : ""} /></button></div>
-        <div className="asset-filter-row" role="tablist" aria-label="Filter assets">
-          {(["all", "image", "model", "audio"] as const).map((category) => <button key={category} role="tab" aria-selected={filter === category} className={filter === category ? "active" : ""} onClick={() => setFilter(category)}>{category === "all" ? "All" : category}</button>)}
+        <div className="asset-filter-row" role="group" aria-label="Filter assets">
+          {(["all", "image", "model", "audio"] as const).map((category) => <button key={category} type="button" aria-pressed={filter === category} className={filter === category ? "active" : ""} onClick={() => setFilter(category)}>{category === "all" ? "All" : category}</button>)}
         </div>
         {uploading && <div className="asset-upload-progress" role="status"><div><Upload size={13} /><span>Uploading and validating…</span><strong>{uploadProgress}%</strong></div><progress max={100} value={uploadProgress} /></div>}
         {loadingAssets ? <div className="asset-library-empty"><LoaderCircle size={16} className="spin" /> Loading your private files…</div>
@@ -344,5 +344,5 @@ export function AssetStudio() {
       </section>
     </div>
     <section className="asset-studio-footnote"><WandSparkles size={14} /><p><strong>Asset safety:</strong> Private uploads remain private by default. Asset Store submissions require an explicit rights basis, attribution, a supported public license, download authorization, and moderator approval; declarations are self-attested and do not replace legal review. Downloads are served as attachments, and withdrawn or removed listings stop being served. AI image/model generation is not available. In AI Studio, selected assets can be bound to an immutable project version and referenced with a `gameforge-asset://UUID` placeholder; only filenames and validated metadata—not private bytes—are sent to AI.</p></section>
-  </main>;
+  </div>;
 }

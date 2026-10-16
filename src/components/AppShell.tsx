@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  Bell, ChevronDown, Compass, FileBox, Flame, Gamepad2, Grid2X2, Hammer, Library, Menu, Search, Sparkles, X,
+  ChevronDown, Compass, FileBox, Flame, Gamepad2, Grid2X2, Hammer, Library, Menu, Search, Sparkles, X,
 } from "lucide-react";
 import type { PublicUser } from "@/lib/auth";
 
@@ -23,8 +23,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<PublicUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
+  const [noticeIsError, setNoticeIsError] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const mobileToggleRef = useRef<HTMLButtonElement>(null);
+  const accountWrapRef = useRef<HTMLDivElement>(null);
+  const accountToggleRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -35,13 +42,68 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, [pathname]);
 
+  useEffect(() => {
+    setMenuOpen(false);
+    setAccountMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target;
+      const typing = target instanceof HTMLElement
+        && (target.isContentEditable || Boolean(target.closest("input, textarea, select, [contenteditable='true']")));
+      if (event.key === "Escape") {
+        if (accountMenuOpen) {
+          setAccountMenuOpen(false);
+          accountToggleRef.current?.focus();
+        } else if (menuOpen) {
+          setMenuOpen(false);
+          mobileToggleRef.current?.focus();
+        } else if (document.activeElement === searchInputRef.current) {
+          searchInputRef.current?.blur();
+        }
+        return;
+      }
+      if (event.key === "/" && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    }
+
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (accountMenuOpen && !accountWrapRef.current?.contains(target)) setAccountMenuOpen(false);
+      if (menuOpen && !mobileMenuRef.current?.contains(target) && !mobileToggleRef.current?.contains(target)) setMenuOpen(false);
+    }
+
+    function onResize() {
+      if (window.innerWidth > 1439 && menuOpen) setMenuOpen(false);
+      if (window.innerWidth <= 700 && accountMenuOpen) setAccountMenuOpen(false);
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("resize", onResize);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [accountMenuOpen, menuOpen]);
+
   async function logout() {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) throw new Error("The sign-out request was not accepted. Try again.");
       setUser(null);
-      setNotice("You’re signed out. See you in the next run.");
+      setAccountMenuOpen(false);
+      setMenuOpen(false);
+      setNoticeIsError(false);
+      setNotice("You’re signed out.");
       window.setTimeout(() => setNotice(""), 3000);
     } catch {
+      setNoticeIsError(true);
       setNotice("Couldn’t sign out just now. Try again.");
     }
   }
@@ -49,14 +111,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const initials = user?.displayName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "GF";
   const links = (mobile = false) => navigation.map(({ href, label, icon: Icon, featured }) => {
     const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
-    return <Link key={href} href={href} className={`nav-link${active ? " active" : ""}${featured ? " nav-featured" : ""}${mobile ? " mobile-link" : ""}`} onClick={() => setMenuOpen(false)}>
+    return <Link key={href} href={href} className={`nav-link${active ? " active" : ""}${featured ? " nav-featured" : ""}${mobile ? " mobile-link" : ""}`} aria-current={active ? "page" : undefined} onClick={() => setMenuOpen(false)}>
       <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
       <span>{label}</span>
-      {featured && <span className="nav-new">NEW</span>}
     </Link>;
   });
 
+  function closeAccountMenu() { setAccountMenuOpen(false); }
+
   return <>
+    <a className="skip-link" href="#main-content">Skip to main content</a>
     <header className="site-header">
       <div className="header-inner">
         <Link className="brand" href="/" aria-label="GameForge home">
@@ -67,41 +131,51 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="header-actions">
           <form className="nav-search" action="/games" role="search">
             <Search size={16} aria-hidden="true" />
-            <input name="q" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find your next game" aria-label="Search games" />
-            <kbd>/</kbd>
+            <input ref={searchInputRef} name="q" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find a game" aria-label="Search games" aria-keyshortcuts="/" />
+            <kbd aria-hidden="true">/</kbd>
           </form>
           {user ? <>
-            <Link className="icon-button notification-button" href="/library" aria-label="Notifications and library"><Bell size={18} /></Link>
-            <div className="account-wrap">
-              <Link className="account-button" href={`/developers/${user.username}`} aria-label={`Open ${user.displayName} profile`}>
-                <span className="avatar avatar-small">{initials}</span>
-                <ChevronDown size={14} />
-              </Link>
-              <div className="account-menu">
+            <Link className="icon-button header-library-link" href="/library" aria-label="Open my library" title="My library"><Library size={18} aria-hidden="true" /></Link>
+            <div className="account-wrap" ref={accountWrapRef}>
+              <button ref={accountToggleRef} type="button" className="account-button" aria-expanded={accountMenuOpen} aria-controls="account-menu" aria-label={`Account options for ${user.displayName}`} onClick={() => setAccountMenuOpen((open) => !open)}>
+                <span className="avatar avatar-small" aria-hidden="true">{initials}</span>
+                <ChevronDown size={14} aria-hidden="true" />
+              </button>
+              <div id="account-menu" className="account-menu" hidden={!accountMenuOpen}>
                 <div className="account-menu-head"><strong>{user.displayName}</strong><span>@{user.username}</span></div>
-                <Link href="/dashboard">Creator dashboard</Link>
-                <Link href="/settings">Settings & connections</Link>
-                {user.role === "admin" || user.role === "moderator" ? <Link href="/admin">Moderation</Link> : null}
-                <button onClick={logout}>Sign out</button>
+                <Link href={`/developers/${user.username}`} onClick={closeAccountMenu}>My profile</Link>
+                <Link href="/dashboard" onClick={closeAccountMenu}>Creator dashboard</Link>
+                <Link href="/settings" onClick={closeAccountMenu}>Settings &amp; connections</Link>
+                {user.role === "admin" || user.role === "moderator" ? <Link href="/admin" onClick={closeAccountMenu}>Moderation</Link> : null}
+                <button type="button" onClick={logout}>Sign out</button>
               </div>
             </div>
           </> : <>
             <Link className="quiet-link sign-in-link" href="/auth?mode=login">Sign in</Link>
             <Link className="button button-small button-primary header-join" href="/auth?mode=register">Join free <span aria-hidden="true">↗</span></Link>
           </>}
-          <button className="mobile-menu-toggle icon-button" onClick={() => setMenuOpen(!menuOpen)} aria-expanded={menuOpen} aria-label={menuOpen ? "Close navigation" : "Open navigation"}>
-            {menuOpen ? <X size={20} /> : <Menu size={20} />}
+          <button ref={mobileToggleRef} type="button" className="mobile-menu-toggle icon-button" onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} aria-controls="mobile-menu" aria-label={menuOpen ? "Close navigation" : "Open navigation"}>
+            {menuOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
           </button>
         </div>
       </div>
-      {menuOpen && <div className="mobile-menu">
-        <div className="mobile-search-row"><form className="nav-search" action="/games"><Search size={16} /><input name="q" placeholder="Search games" aria-label="Search games" /></form></div>
+      <div id="mobile-menu" ref={mobileMenuRef} className="mobile-menu" hidden={!menuOpen}>
+        <div className="mobile-search-row"><form className="nav-search" action="/games" role="search"><Search size={16} aria-hidden="true" /><input name="q" placeholder="Search games" aria-label="Search games" /></form></div>
         <nav aria-label="Mobile navigation">{links(true)}</nav>
-        {user ? <div className="mobile-account"><span className="avatar avatar-small">{initials}</span><div><strong>{user.displayName}</strong><span>@{user.username}</span></div><button className="button button-outline button-small" onClick={logout}>Sign out</button></div> : <div className="mobile-join"><Link className="button button-primary" href="/auth?mode=register" onClick={() => setMenuOpen(false)}>Create your free account</Link><Link href="/auth?mode=login" onClick={() => setMenuOpen(false)}>Already a member? Sign in</Link></div>}
-      </div>}
+        {user ? <div className="mobile-account">
+          <div className="mobile-account-identity"><span className="avatar avatar-small" aria-hidden="true">{initials}</span><div><strong>{user.displayName}</strong><span>@{user.username}</span></div></div>
+          <nav className="mobile-account-links" aria-label="Account navigation">
+            <Link href={`/developers/${user.username}`} onClick={() => setMenuOpen(false)}>My profile</Link>
+            <Link href="/dashboard" onClick={() => setMenuOpen(false)}>Creator dashboard</Link>
+            <Link href="/settings" onClick={() => setMenuOpen(false)}>Settings</Link>
+            {user.role === "admin" || user.role === "moderator" ? <Link href="/admin" onClick={() => setMenuOpen(false)}>Moderation</Link> : null}
+          </nav>
+          <button className="button button-outline button-small" type="button" onClick={logout}>Sign out</button>
+        </div> : <div className="mobile-join"><Link className="button button-primary" href="/auth?mode=register" onClick={() => setMenuOpen(false)}>Create your free account</Link><Link href="/auth?mode=login" onClick={() => setMenuOpen(false)}>Already a member? Sign in</Link></div>}
+      </div>
     </header>
-    {notice && <div className="toast-notice" role="status">{notice}</div>}
-    <main className="app-main">{children}</main>
+    {notice && <div className="toast-notice" role={noticeIsError ? "alert" : "status"}>{notice}</div>}
+    <main id="main-content" className="app-main" tabIndex={-1}>{children}</main>
     <footer className="site-footer">
       <div className="footer-main">
         <div className="footer-brand"><Link className="brand" href="/"><span className="brand-mark"><Hammer size={17} /></span><span className="brand-name">gameforge<span className="brand-period">.</span></span></Link><p>Play. Create. Publish. Discover.<br />A home for small games and big ideas.</p></div>

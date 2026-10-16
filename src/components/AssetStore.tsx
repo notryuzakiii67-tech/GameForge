@@ -109,7 +109,7 @@ export function AssetStore() {
     setAppliedQuery(query.slice(0, 80));
   }
 
-  return <main className="page-wrap page-content asset-store-page">
+  return <div className="page-wrap page-content asset-store-page">
     <header className="page-header asset-store-header">
       <div className="eyebrow"><ShieldCheck size={13} /> COMMUNITY ASSET STORE</div>
       <h1>Assets with permission attached.</h1>
@@ -118,7 +118,7 @@ export function AssetStore() {
     </header>
     <section className="asset-store-toolbar panel-card" aria-label="Search Asset Store">
       <form className="asset-store-search" onSubmit={submitSearch}><Search size={15} /><input className="text-input" value={query} onChange={(event) => setQuery(event.target.value)} maxLength={80} placeholder="Search titles, filenames, and descriptions" aria-label="Search assets" /><button className="button button-primary button-small" type="submit">Search</button></form>
-      <div className="asset-filter-row" role="tablist" aria-label="Filter by asset category">{(["all", "image", "model", "audio"] as const).map((value) => <button key={value} role="tab" aria-selected={category === value} className={category === value ? "active" : ""} onClick={() => setCategory(value)}>{value === "all" ? "All assets" : `${value[0]?.toUpperCase()}${value.slice(1)}`}</button>)}</div>
+      <div className="asset-filter-row" role="group" aria-label="Filter by asset category">{(["all", "image", "model", "audio"] as const).map((value) => <button key={value} type="button" aria-pressed={category === value} className={category === value ? "active" : ""} onClick={() => setCategory(value)}>{value === "all" ? "All assets" : `${value[0]?.toUpperCase()}${value.slice(1)}`}</button>)}</div>
     </section>
     {error && <div className="notice notice-error" role="alert"><AlertCircle size={13} /> {error}</div>}
     {notice && <div className="notice notice-success" role="status">{notice}</div>}
@@ -137,5 +137,5 @@ export function AssetStore() {
         </form>}
       </article>)}</section> : <div className="empty-state-card"><strong>{appliedQuery || category !== "all" ? "No assets match these filters" : "No assets are public yet"}</strong><p>Uploads remain private until their owners authorize public downloads and a moderator approves the listing. Check back later, or submit your own rights-cleared assets from the Asset Studio.</p><Link className="button button-dark button-small" href="/assets">Open Asset Studio</Link></div>}
     <p className="asset-store-scope-note">Rights declarations are self-attested; moderation is not a legal guarantee or independent ownership verification. If you identify an unauthorized or infringing listing, report it for review. Public access can be removed, but previously downloaded copies cannot be recalled. <Link href="/asset-store/policy">Read the review policy.</Link></p>
-  </main>;
+  </div>;
 }

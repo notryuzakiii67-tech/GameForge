@@ -516,7 +516,7 @@ export function Studio({ initialProjectId }: { initialProjectId?: string }) {
     {error && <div className="notice notice-error studio-notice" role="alert"><AlertCircle size={14} /> {error}</div>}
     {notice && !error && <div className="notice notice-success studio-notice" role="status"><Check size={14} /> {notice}</div>}
     {publishStatus && <div className="notice notice-info studio-notice" role="status">{publishStatus}</div>}
-    <div className="studio-mobile-tabs"><button className={mobileTab === "prompt" ? "active" : ""} onClick={() => setMobileTab("prompt")}>Prompt</button><button className={mobileTab === "preview" ? "active" : ""} onClick={() => setMobileTab("preview")}>Preview</button><button className={mobileTab === "files" ? "active" : ""} onClick={() => setMobileTab("files")}>Files & history</button></div>
+    <div className="studio-mobile-tabs" role="group" aria-label="Studio panels"><button type="button" aria-pressed={mobileTab === "prompt"} className={mobileTab === "prompt" ? "active" : ""} onClick={() => setMobileTab("prompt")}>Prompt</button><button type="button" aria-pressed={mobileTab === "preview"} className={mobileTab === "preview" ? "active" : ""} onClick={() => setMobileTab("preview")}>Preview</button><button type="button" aria-pressed={mobileTab === "files"} className={mobileTab === "files" ? "active" : ""} onClick={() => setMobileTab("files")}>Files &amp; history</button></div>
     <div className="studio-layout">
       <aside className={`studio-panel studio-left-panel${mobileTab === "prompt" ? " mobile-active" : ""}`}>
         <div className="studio-panel-heading">Start with an idea <span>SERVER KEY · PRIVATE</span></div>

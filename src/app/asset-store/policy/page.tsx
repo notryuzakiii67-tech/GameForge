@@ -5,7 +5,7 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 export const metadata: Metadata = { title: "Asset Store review policy" };
 
 export default function AssetStorePolicyPage() {
-  return <main className="page-wrap page-content asset-store-policy">
+  return <div className="page-wrap page-content asset-store-policy">
     <Link className="button button-dark button-small" href="/asset-store"><ArrowLeft size={13} /> Back to Asset Store</Link>
     <header className="page-header">
       <div className="eyebrow"><ShieldCheck size={13} /> COMMUNITY ASSET STORE</div>
@@ -19,5 +19,5 @@ export default function AssetStorePolicyPage() {
       <section className="panel-card"><h2>Withdrawal &amp; appeals</h2><p>Owners may withdraw access; moderators can remove a listing. An owner may appeal a rejection or removal, but an appeal does not automatically republish the file.</p><p>GameForge cannot recall copies already downloaded. They may remain subject to the license shown at download, even after a listing is removed.</p></section>
     </div>
     <p className="asset-policy-footnote">GameForge does not provide legal advice. The operator's review process and local legal obligations should be reviewed before production launch.</p>
-  </main>;
+  </div>;
 }
